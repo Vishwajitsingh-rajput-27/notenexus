@@ -11,7 +11,7 @@
 
 <br/>
 
-[![Live Demo](https://img.shields.io/badge/🚀_Live_Demo-Visit_Now-FBFF48?style=for-the-badge&labelColor=000000)](https://notenexus-umber.vercel.app)
+[![Live Demo](https://img.shields.io/badge/🚀_Live_Demo-Visit_Now-FBFF48?style=for-the-badge&labelColor=000000)](https://notenexus-azure.vercel.app)
 
 <br/>
 
@@ -73,7 +73,7 @@
 
 <div align="center">
 
-### [**https://notenexus-umber.vercel.app**](https://notenexus-umber.vercel.app)
+### [**https://notenexus-azure.vercel.app**](https://notenexus-azure.vercel.app)
 
 ![NoteNexus Landing Page](assets/screenshots/hero.png)
 
@@ -462,7 +462,7 @@ notenexus/
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/notenexus.git
+git clone https://github.com/Vishwajitsingh-rajput-27/notenexus.git
 cd notenexus
 
 # Install backend dependencies
@@ -660,7 +660,7 @@ Contributions are welcome. Here is how to get started:
 
 ```bash
 # 1. Fork and clone
-git clone https://github.com/YOUR_USERNAME/notenexus.git
+git clone https://github.com/Vishwajitsingh-rajput-27/notenexus.git
 cd notenexus
 
 # 2. Create a feature branch
@@ -686,14 +686,14 @@ Please follow the existing code style, comment non-obvious logic, and test local
 
 ### Vishwajitsingh Rajput
 
-*Full-Stack Developer · AI/ML Engineer*
+*Full-Stack Developer · Computer Engineer*
 
 Indira College of Engineering and Management, Pune
 
 <br/>
 
-[![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/YOUR_USERNAME)
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://linkedin.com/in/YOUR_PROFILE)
+[![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Vishwajitsingh-rajput-27)
+[![Instagram](https://img.shields.io/badge/Instagram-E4405F?style=for-the-badge&logo=instagram&logoColor=white)](https://instagram.com/vishwajit._.27)
 
 </div>
 
@@ -705,6 +705,6 @@ Indira College of Engineering and Management, Pune
 
 <br/>
 
-[![Try NoteNexus](https://img.shields.io/badge/🚀_Try_NoteNexus_Now-000000?style=for-the-badge)](https://notenexus-umber.vercel.app)
+[![Try NoteNexus](https://img.shields.io/badge/🚀_Try_NoteNexus_Now-000000?style=for-the-badge)](https://notenexus-azure.vercel.app)
 
 </div>
