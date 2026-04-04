@@ -4,7 +4,13 @@ services:
     runtime: node
     region: oregon
     plan: free
-    buildCommand: npm install --ignore-optional
+    # yt-dlp is needed to fetch YouTube transcripts from cloud IPs that YouTube blocks.
+    # We download the pre-built binary directly — no Python/pip required.
+    buildCommand: >
+      npm install --ignore-optional &&
+      curl -fsSL https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp
+      -o /usr/local/bin/yt-dlp &&
+      chmod a+rx /usr/local/bin/yt-dlp
     startCommand: npm start
     healthCheckPath: /ping
     envVars:
@@ -43,4 +49,8 @@ services:
       - key: EMAIL_USER
         sync: false
       - key: EMAIL_PASS
+        sync: false
+      # Optional: Supadata transcript API key (free tier: 500 req/month)
+      # Sign up at https://supadata.ai — used as fallback if yt-dlp fails
+      - key: SUPADATA_API_KEY
         sync: false
