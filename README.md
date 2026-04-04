@@ -2,7 +2,7 @@
 
 <img src="https://img.shields.io/badge/NoteNexus-AI%20Knowledge%20Hub-000000?style=for-the-badge&logoColor=FBFF48" alt="NoteNexus"/>
 
-# 🧠 NoteNexus
+# 📚 NoteNexus
 
 ### *Your notes. Every source. One AI-powered hub.*
 
