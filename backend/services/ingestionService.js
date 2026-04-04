@@ -5,16 +5,14 @@ const log = require('../utils/logger')('ingestion');
  *
  * YouTube transcript fix
  * ──────────────────────
- * `youtube-transcript@1.2.1` declares "type":"module" (ESM) in its own
- * package.json but its compiled output uses `exports.xxx = ...` (CommonJS).
- * Node.js therefore throws "exports is not defined in ES module scope" on
- * every call — both require() and dynamic import() fail.
+ * Strategy 1 (primary): HTML-scrape ytInitialPlayerResponse from the YouTube
+ *   watch page, extract the timed-text caption URL, fetch it as JSON3.
+ *   Zero extra dependencies — uses the BROWSER_HEADERS already defined here.
+ *   Works on Render/Vercel because it mimics a real browser page-load.
  *
- * Solution: replace it with `youtubei.js` (npm: youtubei.js, GitHub: LuanRT/YouTube.js).
- * This library implements the full YouTube Innertube client correctly:
- *   • Generates valid visitorData tokens locally  →  no 400 failedPrecondition
- *   • Handles the PoToken bot-detection challenge  →  no empty responses
- *   • Tracks the current clientVersion automatically  →  no stale-key errors
+ * Strategy 2 (fallback): youtubei.js Innertube client.
+ *   Sometimes cloud-server IPs get blocked on /youtubei/v1/get_transcript
+ *   (the error seen in production). We keep this as a fallback.
  *
  * The rest of `extractFromYouTube` is UNCHANGED from the original design:
  * same URL regex (all 4 formats), same item.text join, same pipeline.
@@ -241,57 +239,115 @@ const extractFromImage = async (imageUrl) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * YoutubeTranscript shim backed by youtubei.js
- * ─────────────────────────────────────────────
- * Exposes exactly the same API as the broken `youtube-transcript` package:
- *   { YoutubeTranscript } with a static fetchTranscript(videoId) method
- *   that returns an array of { text: string } items.
+ * YoutubeTranscript — HTML-scrape strategy (primary) + youtubei.js (fallback)
+ * ─────────────────────────────────────────────────────────────────────────────
+ * PRIMARY:  Fetch the YouTube watch page, parse ytInitialPlayerResponse from
+ *           the page HTML, extract the caption track URL, then fetch the
+ *           timed-text JSON directly.  Zero extra npm packages required.
+ *           Works on Render/Vercel because it looks exactly like a browser
+ *           page-load (uses BROWSER_HEADERS defined above).
  *
- * Why not require('youtube-transcript')?
- *   It declares "type":"module" (ESM) but its dist uses `exports.xxx = ...`
- *   (CommonJS syntax), so Node throws "exports is not defined" on both
- *   require() and dynamic import().  The package is fundamentally broken.
+ * FALLBACK: youtubei.js Innertube client — kept in case YouTube changes its
+ *           page structure.  It is ESM-only so we load it with dynamic import.
+ *           Note: Innertube's /youtubei/v1/get_transcript endpoint is sometimes
+ *           blocked on cloud IPs, hence it is second rather than primary.
  *
- * Why youtubei.js?
- *   It is a complete Innertube client — generates valid visitorData, handles
- *   PoToken, auto-tracks clientVersion — so it never gets 400/429 from YouTube.
- *   It is ESM-only, which is why we load it via dynamic import().
- *   The Innertube instance is cached so the ~200 ms init cost is paid once.
+ * Both strategies return the same shape: Array<{ text: string }>
  */
-let _yt = null;
-const getYT = async () => {
-  if (_yt) return _yt;
-  const { Innertube } = await import('youtubei.js');
-  _yt = await Innertube.create({ generate_session_locally: true });
-  return _yt;
+
+// ── Strategy 1: scrape ytInitialPlayerResponse from the HTML page ─────────────
+const fetchTranscriptViaHTML = async (videoId) => {
+  const url  = `https://www.youtube.com/watch?v=${videoId}&hl=en`;
+  const html = (await fetchYouTube(url)).toString('utf8');
+
+  // Locate ytInitialPlayerResponse JSON object in the page script
+  const marker   = 'ytInitialPlayerResponse=';
+  const markerIdx = html.indexOf(marker);
+  if (markerIdx === -1) throw new Error('ytInitialPlayerResponse not found in page HTML');
+
+  // Walk forward from the opening brace to find the matching closing brace
+  const jsonStart  = html.indexOf('{', markerIdx);
+  if (jsonStart === -1) throw new Error('Could not locate JSON in ytInitialPlayerResponse');
+  let depth = 0, jsonEnd = jsonStart;
+  for (let i = jsonStart; i < html.length; i++) {
+    if      (html[i] === '{') depth++;
+    else if (html[i] === '}') { depth--; if (depth === 0) { jsonEnd = i; break; } }
+  }
+
+  let playerResponse;
+  try { playerResponse = JSON.parse(html.slice(jsonStart, jsonEnd + 1)); }
+  catch (e) { throw new Error(`Failed to parse ytInitialPlayerResponse: ${e.message}`); }
+
+  // Pull the caption track list
+  const captionTracks =
+    playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  if (!captionTracks || captionTracks.length === 0)
+    throw new Error('No captions/subtitles available for this YouTube video');
+
+  // Prefer: manual English → auto English → any track
+  const track =
+    captionTracks.find(t => t.languageCode === 'en' && !t.kind) ||
+    captionTracks.find(t => t.languageCode === 'en')            ||
+    captionTracks[0];
+
+  // Fetch captions as JSON3 (structured timed-text)
+  const captionUrl  = `${track.baseUrl}&fmt=json3`;
+  const captionData = JSON.parse((await fetchYouTube(captionUrl)).toString('utf8'));
+
+  const events = captionData.events || [];
+  return events
+    .filter(e => e.segs && e.segs.some(s => s.utf8 && s.utf8.trim()))
+    .map(e => ({
+      text: e.segs.map(s => (s.utf8 || '').replace(/\n/g, ' ')).join('').trim(),
+    }))
+    .filter(item => item.text);
 };
 
+// ── Strategy 2: youtubei.js Innertube client (ESM, loaded lazily) ─────────────
+let _yt = null;
+const fetchTranscriptViaInnertube = async (videoId) => {
+  if (!_yt) {
+    const { Innertube } = await import('youtubei.js');
+    _yt = await Innertube.create({ generate_session_locally: true });
+  }
+  const info           = await _yt.getInfo(videoId);
+  const transcriptData = await info.getTranscript();
+  const body           = transcriptData?.transcript?.content?.body ?? transcriptData?.content?.body;
+  if (!body) throw new Error('No transcript available for this YouTube video');
+  const segments = body.initial_segments ?? body.segments ?? [];
+  if (!segments.length) throw new Error('No transcript available for this YouTube video');
+  return segments.map(s => ({
+    text: (
+      s?.snippet?.text ??
+      s?.transcriptSegmentRenderer?.snippet?.runs?.map(r => r.text).join('') ??
+      ''
+    ).trim(),
+  })).filter(item => item.text);
+};
+
+// ── Combined facade ───────────────────────────────────────────────────────────
 const YoutubeTranscript = {
-  /**
-   * Returns an array of { text } objects — identical shape to what the
-   * original youtube-transcript package returned, so all callers work
-   * without any other changes.
-   */
   fetchTranscript: async (videoId) => {
-    const yt             = await getYT();
-    const info           = await yt.getInfo(videoId);
-    const transcriptData = await info.getTranscript();
-
-    // youtubei.js transcript response tree (stable across v9/v10)
-    const body = transcriptData?.transcript?.content?.body ?? transcriptData?.content?.body;
-    if (!body) throw new Error('No transcript available for this YouTube video');
-
-    const segments = body.initial_segments ?? body.segments ?? [];
-    if (!segments.length) throw new Error('No transcript available for this YouTube video');
-
-    // Map to { text } — same shape as the original youtube-transcript items
-    return segments.map(s => ({
-      text: (
-        s?.snippet?.text ??
-        s?.transcriptSegmentRenderer?.snippet?.runs?.map(r => r.text).join('') ??
-        ''
-      ).trim(),
-    })).filter(item => item.text);
+    try {
+      log.info(`[YT] Trying HTML-scrape strategy for ${videoId}`);
+      const result = await fetchTranscriptViaHTML(videoId);
+      log.ok(`[YT] HTML-scrape succeeded — ${result.length} segments`);
+      return result;
+    } catch (htmlErr) {
+      log.warn(`[YT] HTML-scrape failed (${htmlErr.message}) — falling back to Innertube`);
+      try {
+        const result = await fetchTranscriptViaInnertube(videoId);
+        log.ok(`[YT] Innertube fallback succeeded — ${result.length} segments`);
+        return result;
+      } catch (innerErr) {
+        log.error('[YT] Both strategies failed', { htmlErr: htmlErr.message, innerErr: innerErr.message });
+        throw new Error(
+          `Could not fetch transcript for this video.\n` +
+          `HTML strategy: ${htmlErr.message}\n` +
+          `Innertube strategy: ${innerErr.message}`
+        );
+      }
+    }
   },
 };
 
