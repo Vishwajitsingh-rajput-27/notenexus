@@ -274,75 +274,66 @@ NoteNexus is a **unified AI knowledge hub** that ingests content from every sour
 ## 🧩 System Architecture
 
 ```
-╔══════════════════════════════════════════════════════════════════════╗
-║                      CLIENT  ·  Browser / PWA                       ║
-║        Next.js 14  ·  React 18  ·  Zustand  ·  Tailwind CSS         ║
-╚══════════════════╤══════════════════════════╤════════════════════════╝
-                   │  REST API (Axios)         │  WebSocket (Socket.io)
-                   ▼                           ▼
-╔══════════════════════════════════════════════════════════════════════╗
-║                  API SERVER  ·  Express + Node.js                   ║
-║                                                                      ║
-║  ┌───────────────────────────────────────────────────────────────┐  ║
-║  │                     Route Modules  (16)                        │  ║
-║  │  /auth  /notes  /search  /copilot  /tutor  /exam  /planner    │  ║
-║  │  /revision  /reminders  /rooms  /gamification  /analytics     │  ║
-║  │  /vault  /whatsapp  /saved  /demo                             │  ║
-║  └───────────────────────────────────────────────────────────────┘  ║
-║                                                                      ║
-║  ┌────────────────┐  ┌─────────────────┐  ┌──────────────────────┐  ║
-║  │ ingestion      │  │   aiService     │  │   vectorService      │  ║
-║  │ Service        │  │  Groq · Gemini  │  │  Pinecone CRUD +     │  ║
-║  │ 4-stage OCR    │  │  LLM · STT      │  │  Semantic Search     │  ║
-║  │ YT 3-cascade   │  │  Vision · Embed │  │  (768-dim cosine)    │  ║
-║  └────────────────┘  └─────────────────┘  └──────────────────────┘  ║
-║                                                                      ║
-║  ┌──────────────────────────────┐   ┌──────────────────────────┐    ║
-║  │  reminderService  (cron)     │   │  Socket Handler           │    ║
-║  │  Nodemailer · Gmail SMTP     │   │  Rooms · Quiz · Typing    │    ║
-║  └──────────────────────────────┘   └──────────────────────────┘    ║
-╚══════╤═══════════╤═══════════╤═══════════════╤═════════╤════════════╝
-       │           │           │               │         │
-       ▼           ▼           ▼               ▼         ▼
-  MongoDB      Pinecone    Cloudinary       Groq      Gemini
-   Atlas       768-dim       CDN           LLaMA      Embed +
- (documents)  (vectors)    (files)        Whisper    PDF OCR
-                                          Vision
-                                            │
-                                     Twilio WhatsApp
-                                     Gmail SMTP
+┌─────────────────────────────────┐
+│      CLIENT  ·  Browser / PWA   │
+│  Next.js 14 · React 18 · Zustand│
+└────────┬────────────────┬───────┘
+         │ REST (Axios)   │ WS (Socket.io)
+         ▼                ▼
+┌─────────────────────────────────┐
+│   API SERVER · Express + Node   │
+│                                 │
+│  Route Modules (16)             │
+│  /auth /notes /search /copilot  │
+│  /tutor /exam /planner /rooms   │
+│  /gamification /whatsapp ...    │
+│                                 │
+│  ingestionService  (4-stage OCR)│
+│  aiService         (Groq+Gemini)│
+│  vectorService     (Pinecone)   │
+│  reminderService   (cron)       │
+│  socketHandler     (rooms/quiz) │
+└──┬──────┬──────┬──────┬────┬───┘
+   ▼      ▼      ▼      ▼    ▼
+MongoDB Pinecone Cloud  Groq Gemini
+Atlas   768-dim  inary  LLaMA Embed
+               CDN   Whisper PDF OCR
+                         │
+                   Twilio WhatsApp
+                   Gmail SMTP
 ```
 
 ### Data Flow — Note Upload
 
 ```
-  User uploads file  ──or──  pastes YouTube URL
-             │
-             ▼
-  ┌──────────────────────────────────────────────────────┐
-  │               ingestionService                       │
-  │                                                      │
-  │  PDF   →  pdf-parse  →  canvas+Groq Vision           │
-  │        →  Tesseract.js  →  Gemini 1.5 Flash          │
-  │  Image →  Groq Vision  →  Tesseract.js               │
-  │  YT    →  yt-dlp  →  Supadata API  →  youtubei.js    │
-  │  Voice →  Groq Whisper (whisper-large-v3)            │
-  └───────────────────────┬──────────────────────────────┘
-                          │  raw text
-                          ▼
-  ┌──────────────────────────────────────────────────────┐
-  │                   aiService                          │
-  │                                                      │
-  │  1. Detect language → translate to English (Groq)   │
-  │  2. Classify Subject + Chapter + Keywords (Groq)     │
-  └───────────────────────┬──────────────────────────────┘
-                          │
-             ┌────────────┴────────────┐
-             ▼                         ▼
-      MongoDB Atlas              vectorService
-      Note document          Gemini text-embedding-004
-      stored with            → 768-dim vector upserted
-      metadata               into Pinecone index
+User uploads file  ──or──  pastes YouTube URL
+              │
+              ▼
+┌─────────────────────────────────┐
+│         ingestionService        │
+│                                 │
+│  PDF   → pdf-parse              │
+│        → canvas + Groq Vision   │
+│        → Tesseract.js           │
+│        → Gemini 1.5 Flash       │
+│  Image → Groq Vision            │
+│        → Tesseract.js           │
+│  YT    → yt-dlp                 │
+│        → Supadata API           │
+│        → youtubei.js            │
+│  Voice → Groq Whisper           │
+└──────────────┬──────────────────┘
+               │  raw text
+               ▼
+┌─────────────────────────────────┐
+│           aiService             │
+│  1. Detect language → translate │
+│  2. Classify Subject + Chapter  │
+└──────┬───────────────┬──────────┘
+       ▼               ▼
+  MongoDB Atlas    vectorService
+  Note document    Gemini embed
+  + metadata       → Pinecone
 ```
 
 ---
@@ -351,97 +342,88 @@ NoteNexus is a **unified AI knowledge hub** that ingests content from every sour
 
 ```
 notenexus/
-│
-├── frontend/                         # Next.js 14 application (Vercel)
+├── frontend/                   # Next.js 14 (Vercel)
 │   ├── public/
-│   │   ├── manifest.json             # PWA manifest
-│   │   └── sw.js                     # Service worker
+│   │   ├── manifest.json       # PWA manifest
+│   │   └── sw.js               # Service worker
 │   └── src/
 │       ├── app/
-│       │   ├── page.tsx              # Animated landing page
-│       │   ├── layout.tsx            # Root layout + font loading
+│       │   ├── page.tsx        # Landing page
+│       │   ├── layout.tsx      # Root layout
 │       │   ├── dashboard/
-│       │   │   ├── page.tsx          # Main app shell — 16 feature tabs
-│       │   │   └── layout.tsx
-│       │   ├── sign-in/page.tsx
-│       │   └── sign-up/page.tsx
+│       │   │   └── page.tsx    # 16 feature tabs
+│       │   ├── sign-in/
+│       │   └── sign-up/
 │       ├── components/
 │       │   ├── notes/
-│       │   │   ├── UploadNote.tsx    # Multi-source upload UI
-│       │   │   ├── NotesList.tsx     # Notes grid + upvoting
-│       │   │   ├── SearchBar.tsx     # Semantic search interface
-│       │   │   └── ClassHub.tsx      # Shared board + real-time
+│       │   │   ├── UploadNote.tsx
+│       │   │   ├── NotesList.tsx
+│       │   │   ├── SearchBar.tsx
+│       │   │   └── ClassHub.tsx
 │       │   ├── revision/
 │       │   │   ├── Flashcards.tsx
 │       │   │   └── MindMap.tsx
-│       │   ├── profile/Profile.tsx
-│       │   ├── StudyCopilot.tsx      # RAG-powered AI chat
+│       │   ├── StudyCopilot.tsx
 │       │   ├── AiTutor.tsx
 │       │   ├── ExamPredictor.tsx
 │       │   ├── StudyPlanner.tsx
-│       │   ├── GroupStudy.tsx        # Real-time rooms + live quiz
+│       │   ├── GroupStudy.tsx
 │       │   ├── WhatsAppBot.tsx
 │       │   ├── FileVault.tsx
-│       │   ├── RevisionReminders.tsx
-│       │   ├── PerformanceDashboard.tsx
-│       │   ├── StreakWidget.tsx
-│       │   └── DemoModeBanner.tsx
+│       │   └── PerformanceDashboard.tsx
 │       ├── hooks/
-│       │   ├── useSocket.ts          # Socket.io lifecycle
-│       │   └── useTracking.ts        # Activity tracking
+│       │   ├── useSocket.ts
+│       │   └── useTracking.ts
 │       └── lib/
-│           ├── api.ts                # All API call functions
-│           ├── store.ts              # Zustand stores (auth + theme)
-│           └── fetchWithRetry.ts     # Resilient HTTP wrapper
+│           ├── api.ts
+│           ├── store.ts        # Zustand (auth + theme)
+│           └── fetchWithRetry.ts
 │
-└── backend/                          # Express API (Render)
-    ├── server.js                     # Entry — Express + Socket.io + cron
-    ├── routes/                       # 16 route modules
-    │   ├── auth.js                   # Register, login, token refresh
-    │   ├── notes.js                  # Upload, CRUD, ingestion pipeline
-    │   ├── search.js                 # Semantic search via Pinecone
-    │   ├── copilot.js                # RAG chat endpoint
-    │   ├── tutor.js                  # AI tutoring sessions
-    │   ├── examPredictor.js          # Question generation
-    │   ├── studyPlanner.js           # AI schedule builder
-    │   ├── revision.js               # Flashcards + mind map
-    │   ├── reminders.js              # Reminder CRUD
-    │   ├── rooms.js                  # Group study room management
-    │   ├── gamification.js           # XP, badges, streak engine
-    │   ├── analytics.js              # Performance statistics
-    │   ├── filevault.js              # File library management
-    │   ├── whatsapp.js               # Twilio webhook + bot logic
-    │   ├── savedItems.js             # Bookmarked content
-    │   └── demo.js                   # Demo seed endpoint
-    ├── models/                       # 8 Mongoose schemas
+└── backend/                    # Express API (Render)
+    ├── server.js               # Entry point
+    ├── routes/                 # 16 route modules
+    │   ├── auth.js
+    │   ├── notes.js
+    │   ├── search.js
+    │   ├── copilot.js
+    │   ├── tutor.js
+    │   ├── examPredictor.js
+    │   ├── studyPlanner.js
+    │   ├── revision.js
+    │   ├── reminders.js
+    │   ├── rooms.js
+    │   ├── gamification.js
+    │   ├── analytics.js
+    │   ├── filevault.js
+    │   ├── whatsapp.js
+    │   ├── savedItems.js
+    │   └── demo.js
+    ├── models/                 # 8 Mongoose schemas
     │   ├── User.js
-    │   ├── UserProfile.js            # XP, badges, streaks, subject scores
+    │   ├── UserProfile.js
     │   ├── Note.js
     │   ├── GroupRoom.js
     │   ├── StudySession.js
     │   ├── Reminder.js
     │   ├── SavedItem.js
     │   ├── FileVault.js
-    │   ├── WhatsAppConversation.js   # TTL-indexed — auto-expires in 24h
-    │   └── WhatsAppSession.js
+    │   └── WhatsAppConversation.js
     ├── services/
-    │   ├── aiService.js              # Groq + Gemini wrappers
-    │   ├── ingestionService.js       # Multi-source extraction engine
-    │   ├── vectorService.js          # Pinecone CRUD + semantic search
-    │   └── reminderService.js        # Cron-driven email reminders
+    │   ├── aiService.js
+    │   ├── ingestionService.js
+    │   ├── vectorService.js
+    │   └── reminderService.js
     ├── middleware/
-    │   ├── auth.js                   # JWT guard
-    │   ├── checkPlan.js              # Free / Pro / Team feature gates
-    │   └── trackActivity.js          # Study session tracking
-    ├── socket/index.js               # Socket.io event handlers
+    │   ├── auth.js
+    │   ├── checkPlan.js
+    │   └── trackActivity.js
+    ├── socket/index.js
     ├── config/
-    │   ├── db.js                     # MongoDB Atlas connection
-    │   └── cloudinary.js             # Cloudinary + Multer storage
-    ├── utils/
-    │   ├── groq.js                   # Groq client + JSON extraction helper
-    │   └── logger.js                 # Structured console logger
-    ├── scripts/seedDemo.js           # Demo data seeder
-    └── render.yaml                   # Render deployment spec
+    │   ├── db.js
+    │   └── cloudinary.js
+    └── utils/
+        ├── groq.js
+        └── logger.js
 ```
 
 ---
@@ -545,33 +527,20 @@ cd backend && node scripts/seedDemo.js
 
 ## 📸 User Journey
 
-```
-  ┌──────────────────────────────────────────────────────────────────┐
-  │  1. LAND        Homepage → animated showcase → sign up in 30s    │
-  │         ↓                                                        │
-  │  2. UPLOAD      Drop PDF / paste YouTube URL / record voice      │
-  │         ↓                                                        │
-  │  3. INGEST      Extract → translate → classify Subject & Chapter │
-  │         ↓                                                        │
-  │  4. SEARCH      Ask in plain English → Pinecone top 8 matches   │
-  │         ↓                                                        │
-  │  5. REVISE      One-click flashcards generated from any note     │
-  │         ↓                                                        │
-  │  6. MAP         Visual mind map rendered from note content       │
-  │         ↓                                                        │
-  │  7. PLAN        Enter exam date → AI builds revision schedule    │
-  │         ↓                                                        │
-  │  8. PREDICT     Exam Predictor → MCQ + short answers + answers   │
-  │         ↓                                                        │
-  │  9. COPILOT     Chat with AI grounded in your own notes (RAG)   │
-  │         ↓                                                        │
-  │  10. COLLAB     Group Study room → share code → live AI quiz     │
-  │         ↓                                                        │
-  │  11. WHATSAPP   Link account → study from anywhere via WhatsApp  │
-  │         ↓                                                        │
-  │  12. TRACK      Streaks · XP · Badges · Subject readiness        │
-  └──────────────────────────────────────────────────────────────────┘
-```
+| Step | Action |
+|:---:|:---|
+| 1️⃣ **LAND** | Homepage → animated showcase → sign up in 30s |
+| 2️⃣ **UPLOAD** | Drop PDF / paste YouTube URL / record voice |
+| 3️⃣ **INGEST** | Extract → translate → classify Subject & Chapter |
+| 4️⃣ **SEARCH** | Ask in plain English → Pinecone top 8 matches |
+| 5️⃣ **REVISE** | One-click flashcards generated from any note |
+| 6️⃣ **MAP** | Visual mind map rendered from note content |
+| 7️⃣ **PLAN** | Enter exam date → AI builds revision schedule |
+| 8️⃣ **PREDICT** | Exam Predictor → MCQ + short answers + answers |
+| 9️⃣ **COPILOT** | Chat with AI grounded in your own notes (RAG) |
+| 🔟 **COLLAB** | Group Study room → share code → live AI quiz |
+| 1️⃣1️⃣ **WHATSAPP** | Link account → study from anywhere via WhatsApp |
+| 1️⃣2️⃣ **TRACK** | Streaks · XP · Badges · Subject readiness |
 
 ### Dashboard Tabs
 
