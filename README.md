@@ -275,24 +275,24 @@ NoteNexus is a **unified AI knowledge hub** that ingests content from every sour
 
 ```
 ┌─────────────────────────────────┐
-│      CLIENT  ·  Browser / PWA   │
-│  Next.js 14 · React 18 · Zustand│
+│      CLIENT  ·  Browser / PWA         │
+│  Next.js 14 · React 18 · Zustand      │
 └────────┬────────────────┬───────┘
          │ REST (Axios)   │ WS (Socket.io)
          ▼                ▼
 ┌─────────────────────────────────┐
-│   API SERVER · Express + Node   │
-│                                 │
-│  Route Modules (16)             │
-│  /auth /notes /search /copilot  │
-│  /tutor /exam /planner /rooms   │
-│  /gamification /whatsapp ...    │
-│                                 │
-│  ingestionService  (4-stage OCR)│
-│  aiService         (Groq+Gemini)│
-│  vectorService     (Pinecone)   │
-│  reminderService   (cron)       │
-│  socketHandler     (rooms/quiz) │
+│   API SERVER · Express + Node         │
+│                                       │
+│  Route Modules (16)                   │
+│  /auth /notes /search /copilot        │
+│  /tutor /exam /planner /rooms         │
+│  /gamification /whatsapp ...          │
+│                                       │
+│  ingestionService  (4-stage OCR)      │
+│  aiService         (Groq+Gemini)      │
+│  vectorService     (Pinecone)         │
+│  reminderService   (cron)             │
+│  socketHandler     (rooms/quiz)       │
 └──┬──────┬──────┬──────┬────┬───┘
    ▼      ▼      ▼      ▼    ▼
 MongoDB Pinecone Cloud  Groq Gemini
@@ -310,25 +310,25 @@ User uploads file  ──or──  pastes YouTube URL
               │
               ▼
 ┌─────────────────────────────────┐
-│         ingestionService        │
-│                                 │
-│  PDF   → pdf-parse              │
-│        → canvas + Groq Vision   │
-│        → Tesseract.js           │
-│        → Gemini 1.5 Flash       │
-│  Image → Groq Vision            │
-│        → Tesseract.js           │
-│  YT    → yt-dlp                 │
-│        → Supadata API           │
-│        → youtubei.js            │
-│  Voice → Groq Whisper           │
+│         ingestionService              │
+│                                       │
+│  PDF   → pdf-parse                   │
+│        → canvas + Groq Vision        │
+│        → Tesseract.js                │
+│        → Gemini 1.5 Flash            │
+│  Image → Groq Vision                 │
+│        → Tesseract.js                │
+│  YT    → yt-dlp                      │
+│        → Supadata API                │
+│        → youtubei.js                 │
+│  Voice → Groq Whisper                │
 └──────────────┬──────────────────┘
                │  raw text
                ▼
 ┌─────────────────────────────────┐
-│           aiService             │
-│  1. Detect language → translate │
-│  2. Classify Subject + Chapter  │
+│           aiService                   │
+│  1. Detect language → translate      │
+│  2. Classify Subject + Chapter        │
 └──────┬───────────────┬──────────┘
        ▼               ▼
   MongoDB Atlas    vectorService
