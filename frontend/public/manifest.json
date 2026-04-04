@@ -1,0 +1,13 @@
+{
+  "name": "NoteNexus",
+  "short_name": "NoteNexus",
+  "description": "AI-powered study platform — notes, flashcards, copilot & more",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#FBFF48",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

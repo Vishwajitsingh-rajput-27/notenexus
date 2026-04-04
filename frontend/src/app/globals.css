@@ -1,0 +1,194 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── RESET ── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+
+/* ── CSS VARIABLES — dark (default) ── */
+:root {
+  --bg:          #0a0a0a;
+  --bg2:         #111111;
+  --bg3:         #1a1a1a;
+  --fg:          #ffffff;
+  --fg-dim:      rgba(255,255,255,0.35);
+  --fg-muted:    rgba(255,255,255,0.15);
+  --border:      rgba(255,255,255,0.10);
+  --border-sub:  rgba(255,255,255,0.06);
+  --inp-bg:      rgba(255,255,255,0.04);
+  --inp-border:  rgba(255,255,255,0.12);
+  --inp-text:    #ffffff;
+  --inp-ph:      rgba(255,255,255,0.25);
+  --card-bg:     rgba(255,255,255,0.03);
+  --card-border: rgba(255,255,255,0.08);
+  --accent:      #FBFF48;
+  --accent-fg:   #000000;
+}
+
+/* ── CSS VARIABLES — light ── */
+body.light {
+  --bg:          #f0ede6;
+  --bg2:         #e8e4dc;
+  --bg3:         #dedad2;
+  --fg:          #0a0a0a;
+  --fg-dim:      rgba(10,10,10,0.50);
+  --fg-muted:    rgba(10,10,10,0.25);
+  --border:      rgba(0,0,0,0.12);
+  --border-sub:  rgba(0,0,0,0.07);
+  --inp-bg:      rgba(0,0,0,0.05);
+  --inp-border:  rgba(0,0,0,0.18);
+  --inp-text:    #0a0a0a;
+  --inp-ph:      rgba(10,10,10,0.35);
+  --card-bg:     rgba(0,0,0,0.04);
+  --card-border: rgba(0,0,0,0.10);
+  --accent:      #FBFF48;
+  --accent-fg:   #000000;
+}
+
+/* ── BASE BODY ── */
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+  overflow-x: hidden;
+  transition: background 0.4s, color 0.4s;
+}
+
+/* ── SELECTION ── */
+::selection { background: #FBFF48; color: #000; }
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--fg-muted); border-radius: 2px; }
+
+/* ══════════════════════════════════════════════════════════════
+   LIGHT MODE — FIX ALL INVISIBLE INPUTS, TEXTAREAS, SELECTS
+══════════════════════════════════════════════════════════════ */
+
+/* Every input/textarea/select in light mode */
+body.light input,
+body.light textarea,
+body.light select {
+  background: rgba(0,0,0,0.06) !important;
+  border-color: rgba(0,0,0,0.20) !important;
+  color: #0a0a0a !important;
+}
+
+body.light input::placeholder,
+body.light textarea::placeholder {
+  color: rgba(10,10,10,0.40) !important;
+}
+
+body.light select option {
+  background: #e8e4dc;
+  color: #0a0a0a;
+}
+
+/* Fix white-on-white text inside inline-styled dark cards */
+body.light [style*="color: #fff"],
+body.light [style*="color: white"],
+body.light [style*="color:#fff"],
+body.light [style*="color:white"] {
+  color: #0a0a0a !important;
+}
+
+/* Fix invisible text inside rgba(255,255,255,0.xx) backgrounds */
+body.light [style*="background: rgba(255,255,255"],
+body.light [style*="background:rgba(255,255,255"] {
+  background: rgba(0,0,0,0.05) !important;
+  color: #0a0a0a !important;
+}
+
+/* Fix black background cards in light mode */
+body.light [style*="background: #0a0a0a"],
+body.light [style*="background:#0a0a0a"],
+body.light [style*="background: #0d0d0d"],
+body.light [style*="background:#0d0d0d"],
+body.light [style*="background: #111"],
+body.light [style*="background: #1a1a1a"],
+body.light [style*="background:#1a1a1a"],
+body.light [style*="background: black"],
+body.light [style*="background:black"] {
+  background: #dedad2 !important;
+  color: #0a0a0a !important;
+  border-color: rgba(0,0,0,0.15) !important;
+}
+
+/* Fix rgba(0,0,0,x) dark overlays — keep them but subtler */
+body.light [style*="background: rgba(0,0,0,0.2"],
+body.light [style*="background: rgba(0,0,0,0.3"],
+body.light [style*="background:rgba(0,0,0,0.2"],
+body.light [style*="background:rgba(0,0,0,0.3"] {
+  background: rgba(0,0,0,0.07) !important;
+}
+
+/* Fix white-border elements */
+body.light [style*="border: 1px solid rgba(255,255,255"],
+body.light [style*="border:1px solid rgba(255,255,255"],
+body.light [style*="border-color: rgba(255,255,255"] {
+  border-color: rgba(0,0,0,0.15) !important;
+}
+
+/* Fix slate/gray tailwind text colors in light mode */
+body.light .text-slate-100,
+body.light .text-slate-200,
+body.light .text-slate-300 { color: #1a1a1a !important; }
+body.light .text-slate-400 { color: #444444 !important; }
+body.light .text-slate-500 { color: #666666 !important; }
+body.light .text-white      { color: #0a0a0a !important; }
+
+/* Fix Tailwind bg-white/5, bg-white/10 etc in light mode */
+body.light .bg-white\/5  { background: rgba(0,0,0,0.05) !important; }
+body.light .bg-white\/10 { background: rgba(0,0,0,0.07) !important; }
+body.light .bg-black\/20 { background: rgba(0,0,0,0.06) !important; }
+body.light .bg-black\/30 { background: rgba(0,0,0,0.08) !important; }
+
+/* Fix Tailwind border-white colors in light mode */
+body.light .border-white\/5  { border-color: rgba(0,0,0,0.06) !important; }
+body.light .border-white\/10 { border-color: rgba(0,0,0,0.12) !important; }
+
+/* Fix glass utility in light mode */
+body.light .glass {
+  background: rgba(0,0,0,0.04) !important;
+  border-color: rgba(0,0,0,0.10) !important;
+  color: #0a0a0a !important;
+}
+
+/* Fix placeholder text in Tailwind */
+body.light .placeholder-slate-500::placeholder { color: rgba(10,10,10,0.40) !important; }
+
+/* Fix the dark code/terminal blocks (WhatsApp page etc) */
+body.light pre,
+body.light code,
+body.light [style*="background: #000"],
+body.light [style*="background:#000"] {
+  background: #2a2a2a !important;
+  color: #e0e0e0 !important;
+  border-color: rgba(0,0,0,0.20) !important;
+}
+
+/* Fix buttons with dark backgrounds */
+body.light button[style*="background: rgba(255,255,255,0.0"],
+body.light button[style*="background:rgba(255,255,255,0.0"] {
+  background: transparent !important;
+}
+
+/* Ensure dark-mode-only colored text stays readable */
+body.light .text-green-400  { color: #16a34a !important; }
+body.light .text-blue-400   { color: #2563eb !important; }
+body.light .text-purple-400 { color: #7c3aed !important; }
+body.light .text-red-400    { color: #dc2626 !important; }
+body.light .text-yellow-400 { color: #ca8a04 !important; }
+
+/* ── CARD FLIP ── */
+.flip-card { perspective: 1000px; }
+.flip-inner { position: relative; transition: transform 0.5s; transform-style: preserve-3d; }
+.flip-inner.flipped { transform: rotateY(180deg); }
+.flip-front, .flip-back {
+  position: absolute; top: 0; left: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.flip-back { transform: rotateY(180deg); }
