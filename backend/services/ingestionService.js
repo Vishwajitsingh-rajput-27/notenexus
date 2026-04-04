@@ -239,71 +239,156 @@ const extractFromImage = async (imageUrl) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * YoutubeTranscript — HTML-scrape strategy (primary) + youtubei.js (fallback)
+ * YoutubeTranscript — three-strategy cascade
  * ─────────────────────────────────────────────────────────────────────────────
- * PRIMARY:  Fetch the YouTube watch page, parse ytInitialPlayerResponse from
- *           the page HTML, extract the caption track URL, then fetch the
- *           timed-text JSON directly.  Zero extra npm packages required.
- *           Works on Render/Vercel because it looks exactly like a browser
- *           page-load (uses BROWSER_HEADERS defined above).
+ * ROOT CAUSE of previous failures:
+ *   Render/Vercel cloud IPs are flagged by Google. ANY direct HTTP request to
+ *   youtube.com is silently redirected to https://www.google.com/sorry/index
+ *   which returns HTTP 429.  No User-Agent spoofing or header trick fixes this
+ *   because the block is on the IP level, not the request level.
  *
- * FALLBACK: youtubei.js Innertube client — kept in case YouTube changes its
- *           page structure.  It is ESM-only so we load it with dynamic import.
- *           Note: Innertube's /youtubei/v1/get_transcript endpoint is sometimes
- *           blocked on cloud IPs, hence it is second rather than primary.
+ * STRATEGY 1 — yt-dlp subprocess (primary, most reliable)
+ *   yt-dlp is a battle-hardened downloader that rotates extraction methods,
+ *   handles consent cookies, and uses its own HTTP client to bypass bot
+ *   detection.  Installed via the Render build command (see render.yaml).
+ *   Outputs subtitle files as JSON3 which we parse directly.
+ *   Binary path: /usr/local/bin/yt-dlp  (overridable via YTDLP_PATH env var)
  *
- * Both strategies return the same shape: Array<{ text: string }>
+ * STRATEGY 2 — Supadata transcript API (fallback, requires SUPADATA_API_KEY)
+ *   Free tier: 500 requests/month.  Sign up at https://supadata.ai
+ *   Zero dependencies — plain HTTPS request to api.supadata.ai.
+ *   Only attempted if process.env.SUPADATA_API_KEY is set.
+ *
+ * STRATEGY 3 — youtubei.js Innertube (last resort)
+ *   Sometimes works if YouTube hasn't flagged the current IP yet.
+ *   ESM-only, loaded lazily.
+ *
+ * All strategies return Array<{ text: string }> — same shape as before.
  */
 
-// ── Strategy 1: scrape ytInitialPlayerResponse from the HTML page ─────────────
-const fetchTranscriptViaHTML = async (videoId) => {
-  const url  = `https://www.youtube.com/watch?v=${videoId}&hl=en`;
-  const html = (await fetchYouTube(url)).toString('utf8');
+const { execFile } = require('child_process');
+const fs           = require('fs');
+const os           = require('os');
+const path         = require('path');
 
-  // Locate ytInitialPlayerResponse JSON object in the page script
-  const marker   = 'ytInitialPlayerResponse=';
-  const markerIdx = html.indexOf(marker);
-  if (markerIdx === -1) throw new Error('ytInitialPlayerResponse not found in page HTML');
+// ── Strategy 1: yt-dlp subprocess ────────────────────────────────────────────
+/**
+ * Run yt-dlp once with a given set of args and resolve with the first .json3
+ * file it writes to tmpDir.  Rejects if no file is produced.
+ */
+const runYtDlp = (videoId, tmpDir, extraArgs = []) =>
+  new Promise((resolve, reject) => {
+    const ytDlpBin = process.env.YTDLP_PATH || 'yt-dlp';
+    execFile(
+      ytDlpBin,
+      [
+        '--write-auto-sub',
+        '--skip-download',
+        '--sub-format', 'json3',
+        '--no-playlist',
+        '--no-warnings',
+        '--quiet',
+        ...extraArgs,
+        '-o', path.join(tmpDir, '%(id)s'),
+        `https://www.youtube.com/watch?v=${videoId}`,
+      ],
+      { timeout: 60_000 },
+      (err, _stdout, stderr) => {
+        let files = [];
+        try { files = fs.readdirSync(tmpDir); } catch {}
+        const subFile = files.find(f => f.endsWith('.json3'));
+        if (!subFile) {
+          return reject(new Error(
+            err
+              ? `yt-dlp wrote no subtitle file: ${stderr?.slice(0, 200) || err.message}`
+              : 'yt-dlp wrote no subtitle file — video may have no captions'
+          ));
+        }
+        resolve(subFile);
+      }
+    );
+  });
 
-  // Walk forward from the opening brace to find the matching closing brace
-  const jsonStart  = html.indexOf('{', markerIdx);
-  if (jsonStart === -1) throw new Error('Could not locate JSON in ytInitialPlayerResponse');
-  let depth = 0, jsonEnd = jsonStart;
-  for (let i = jsonStart; i < html.length; i++) {
-    if      (html[i] === '{') depth++;
-    else if (html[i] === '}') { depth--; if (depth === 0) { jsonEnd = i; break; } }
-  }
-
-  let playerResponse;
-  try { playerResponse = JSON.parse(html.slice(jsonStart, jsonEnd + 1)); }
-  catch (e) { throw new Error(`Failed to parse ytInitialPlayerResponse: ${e.message}`); }
-
-  // Pull the caption track list
-  const captionTracks =
-    playerResponse?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-  if (!captionTracks || captionTracks.length === 0)
-    throw new Error('No captions/subtitles available for this YouTube video');
-
-  // Prefer: manual English → auto English → any track
-  const track =
-    captionTracks.find(t => t.languageCode === 'en' && !t.kind) ||
-    captionTracks.find(t => t.languageCode === 'en')            ||
-    captionTracks[0];
-
-  // Fetch captions as JSON3 (structured timed-text)
-  const captionUrl  = `${track.baseUrl}&fmt=json3`;
-  const captionData = JSON.parse((await fetchYouTube(captionUrl)).toString('utf8'));
-
-  const events = captionData.events || [];
-  return events
-    .filter(e => e.segs && e.segs.some(s => s.utf8 && s.utf8.trim()))
+const parseYtDlpJson3 = (filePath) => {
+  const raw  = fs.readFileSync(filePath, 'utf8');
+  const data = JSON.parse(raw);
+  return (data.events || [])
+    .filter(e => e.segs && e.segs.some(s => s.utf8?.trim()))
     .map(e => ({
       text: e.segs.map(s => (s.utf8 || '').replace(/\n/g, ' ')).join('').trim(),
     }))
     .filter(item => item.text);
 };
 
-// ── Strategy 2: youtubei.js Innertube client (ESM, loaded lazily) ─────────────
+const fetchTranscriptViaYtDlp = async (videoId) => {
+  let tmpDir;
+  try { tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'nn-yt-')); }
+  catch (e) { throw new Error(`mkdtemp failed: ${e.message}`); }
+
+  const cleanup = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {} };
+
+  try {
+    // Pass 1 — try English (en, en-US, en-GB, en-orig) first
+    let subFile;
+    try {
+      subFile = await runYtDlp(videoId, tmpDir, ['--sub-lang', 'en,en-US,en-GB,en-orig']);
+      log.info('[YT/yt-dlp] English subtitles found');
+    } catch {
+      // Pass 2 — no English found; grab whatever language is available
+      log.info('[YT/yt-dlp] No English subs — fetching any available language');
+      // Clean up any partial files from pass 1 before retrying
+      try { fs.readdirSync(tmpDir).forEach(f => fs.unlinkSync(path.join(tmpDir, f))); } catch {}
+      subFile = await runYtDlp(videoId, tmpDir); // no --sub-lang = any language
+    }
+
+    const segments = parseYtDlpJson3(path.join(tmpDir, subFile));
+    cleanup();
+    if (!segments.length) throw new Error('yt-dlp subtitle file contained no text segments');
+    return segments;
+  } catch (err) {
+    cleanup();
+    throw err;
+  }
+};
+
+// ── Strategy 2: Supadata transcript API ──────────────────────────────────────
+const fetchTranscriptViaSupadata = (videoId) =>
+  new Promise((resolve, reject) => {
+    const apiKey = process.env.SUPADATA_API_KEY;
+    if (!apiKey) return reject(new Error('SUPADATA_API_KEY not configured — skipping'));
+
+    const options = {
+      hostname: 'api.supadata.ai',
+      path:     `/v1/youtube/transcript?videoId=${videoId}&lang=en&text=false`,
+      method:   'GET',
+      headers:  { 'x-api-key': apiKey, 'Accept': 'application/json' },
+    };
+
+    const req = https.request(options, (res) => {
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => {
+        try {
+          const body = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+          if (res.statusCode !== 200)
+            return reject(new Error(`Supadata error (${res.statusCode}): ${body?.message || 'unknown'}`));
+          // Supadata returns { content: [{ text, offset, duration }] }
+          const segments = (body.content || [])
+            .map(item => ({ text: (item.text || '').trim() }))
+            .filter(item => item.text);
+          if (!segments.length) return reject(new Error('Supadata returned empty transcript'));
+          resolve(segments);
+        } catch (e) {
+          reject(new Error(`Failed to parse Supadata response: ${e.message}`));
+        }
+      });
+    });
+    req.on('error', reject);
+    req.setTimeout(30_000, () => { req.destroy(); reject(new Error('Supadata request timeout')); });
+    req.end();
+  });
+
+// ── Strategy 3: youtubei.js Innertube (last resort) ──────────────────────────
 let _yt = null;
 const fetchTranscriptViaInnertube = async (videoId) => {
   if (!_yt) {
@@ -325,30 +410,133 @@ const fetchTranscriptViaInnertube = async (videoId) => {
   })).filter(item => item.text);
 };
 
-// ── Combined facade ───────────────────────────────────────────────────────────
+// ── Combined facade — tries strategies in order ───────────────────────────────
 const YoutubeTranscript = {
   fetchTranscript: async (videoId) => {
+    const errors = {};
+
+    // 1. yt-dlp
     try {
-      log.info(`[YT] Trying HTML-scrape strategy for ${videoId}`);
-      const result = await fetchTranscriptViaHTML(videoId);
-      log.ok(`[YT] HTML-scrape succeeded — ${result.length} segments`);
-      return result;
-    } catch (htmlErr) {
-      log.warn(`[YT] HTML-scrape failed (${htmlErr.message}) — falling back to Innertube`);
-      try {
-        const result = await fetchTranscriptViaInnertube(videoId);
-        log.ok(`[YT] Innertube fallback succeeded — ${result.length} segments`);
-        return result;
-      } catch (innerErr) {
-        log.error('[YT] Both strategies failed', { htmlErr: htmlErr.message, innerErr: innerErr.message });
-        throw new Error(
-          `Could not fetch transcript for this video.\n` +
-          `HTML strategy: ${htmlErr.message}\n` +
-          `Innertube strategy: ${innerErr.message}`
-        );
-      }
+      log.info(`[YT] Strategy 1: yt-dlp for ${videoId}`);
+      const r = await fetchTranscriptViaYtDlp(videoId);
+      log.ok(`[YT] yt-dlp succeeded — ${r.length} segments`);
+      return r;
+    } catch (e) {
+      errors.ytdlp = e.message;
+      log.warn(`[YT] yt-dlp failed: ${e.message}`);
+    }
+
+    // 2. Supadata API
+    try {
+      log.info(`[YT] Strategy 2: Supadata API for ${videoId}`);
+      const r = await fetchTranscriptViaSupadata(videoId);
+      log.ok(`[YT] Supadata succeeded — ${r.length} segments`);
+      return r;
+    } catch (e) {
+      errors.supadata = e.message;
+      log.warn(`[YT] Supadata failed: ${e.message}`);
+    }
+
+    // 3. Innertube
+    try {
+      log.info(`[YT] Strategy 3: Innertube for ${videoId}`);
+      const r = await fetchTranscriptViaInnertube(videoId);
+      log.ok(`[YT] Innertube succeeded — ${r.length} segments`);
+      return r;
+    } catch (e) {
+      errors.innertube = e.message;
+      log.error('[YT] All 3 strategies failed', errors);
+      throw new Error(
+        `Could not fetch YouTube transcript.\n` +
+        `yt-dlp: ${errors.ytdlp}\n` +
+        `Supadata: ${errors.supadata}\n` +
+        `Innertube: ${errors.innertube}`
+      );
     }
   },
+};
+
+// ── Translate transcript text to English via Groq ─────────────────────────────
+/**
+ * Detects the language of the text and, if it is not English, translates it
+ * to English using Groq (llama-3.3-70b-versatile, already configured).
+ *
+ * Strategy:
+ *  1. Send the first 500 characters to Groq for language detection.
+ *  2. If English → return the original text unchanged (fast, no token cost).
+ *  3. If non-English → split the full text into ~3 000-char chunks and
+ *     translate each chunk with a single Groq call, then join them.
+ *     Chunking avoids hitting Groq's context limits on very long transcripts.
+ */
+const { groqCall } = require('../utils/groq');
+
+const CHUNK_SIZE = 3_000; // characters per translation chunk
+
+const detectLanguage = async (sample) => {
+  try {
+    const reply = await groqCall(
+      [
+        {
+          role: 'system',
+          content:
+            'You are a language detector. Respond with ONLY the ISO 639-1 language code ' +
+            '(e.g. "en", "hi", "es", "fr", "zh", "ar"). No other text.',
+        },
+        { role: 'user', content: sample.slice(0, 500) },
+      ],
+      { maxTokens: 5, temperature: 0 }
+    );
+    return reply.trim().toLowerCase().slice(0, 2); // e.g. "hi"
+  } catch (err) {
+    log.warn('[YT/translate] Language detection failed — assuming English', err.message);
+    return 'en';
+  }
+};
+
+const translateChunk = (chunk, sourceLang) =>
+  groqCall(
+    [
+      {
+        role: 'system',
+        content:
+          `You are a professional translator. Translate the following ${sourceLang} text to English. ` +
+          'Preserve the meaning exactly. Output ONLY the translated text — no commentary, no explanations.',
+      },
+      { role: 'user', content: chunk },
+    ],
+    { maxTokens: 4_096, temperature: 0.1, timeoutMs: 60_000 }
+  );
+
+const translateToEnglish = async (text, sourceLang) => {
+  log.info(`[YT/translate] Translating from "${sourceLang}" to English (${text.length} chars)`);
+
+  // Split into chunks at word boundaries
+  const chunks = [];
+  let start = 0;
+  while (start < text.length) {
+    let end = Math.min(start + CHUNK_SIZE, text.length);
+    // Back up to the nearest space so we don't split mid-word
+    if (end < text.length) {
+      const spaceIdx = text.lastIndexOf(' ', end);
+      if (spaceIdx > start) end = spaceIdx;
+    }
+    chunks.push(text.slice(start, end).trim());
+    start = end + 1;
+  }
+
+  log.info(`[YT/translate] Translating ${chunks.length} chunk(s) via Groq`);
+
+  // Translate chunks sequentially to avoid hammering the rate limit
+  const translated = [];
+  for (let i = 0; i < chunks.length; i++) {
+    log.info(`[YT/translate] Chunk ${i + 1}/${chunks.length}`);
+    const result = await translateChunk(chunks[i], sourceLang);
+    translated.push(result.trim());
+  }
+
+  const joined = translated.join(' ');
+  log.ok(`[YT/translate] Translation complete — ${joined.length} chars`);
+  return joined;
 };
 
 // ── Extract text from YouTube ─────────────────────────────────────────────────
@@ -373,7 +561,17 @@ const extractFromYouTube = async (youtubeUrl) => {
   const videoId = idMatch[1];
 
   const transcript = await YoutubeTranscript.fetchTranscript(videoId);
-  return transcript.map((item) => item.text).join(' ');
+  const rawText    = transcript.map((item) => item.text).join(' ');
+
+  // ── Language detection + translation ──────────────────────────────────────
+  const lang = await detectLanguage(rawText);
+  if (lang === 'en') {
+    log.info('[YT/translate] Transcript is already English — no translation needed');
+    return rawText;
+  }
+
+  log.info(`[YT/translate] Detected language: "${lang}" — translating to English`);
+  return translateToEnglish(rawText, lang);
 };
 
 // ── Extract text from voice ───────────────────────────────────────────────────
