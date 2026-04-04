@@ -122,8 +122,8 @@ Students today are drowning in **fragmented knowledge** scattered across multipl
 | **Study Copilot & Coverage Analysis** | **Analytics Dashboard** |
 | ![Group Study](assets/screenshots/group-study.png) | ![WhatsApp Bot](assets/screenshots/whatsapp.png) |
 | **Group Study Rooms** | **WhatsApp AI Bot** |
-| ![Profile](assets/screenshots/profile.png) | |
-| **User Profile & Subject Breakdown** | |
+| ![Profile](assets/screenshots/profile.png) | ![Landing Page](assets/screenshots/hero.png) |
+| **User Profile & Subject Breakdown** | **Landing Page** |
 
 </div>
 
