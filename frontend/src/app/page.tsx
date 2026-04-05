@@ -10,37 +10,60 @@ const FEATURES = [
   {
     group: 'INGESTION_MODULE',
     items: [
-      'PDF, images, YouTube, voice, WhatsApp — every source, one place.',
-      'AI tags each note by subject & chapter automatically. Zero manual effort.',
+      'PDF, image, YouTube, voice, WhatsApp & plain text — every source, one place.',
+      '4-stage OCR fallback for PDFs: pdf-parse → Groq Vision → Tesseract.js → Gemini 1.5 Flash.',
+      '3-strategy YouTube cascade: yt-dlp → Supadata API → youtubei.js — bypasses geo-blocks.',
+      'Auto language detection & translation — upload in any language, indexed in English.',
+      'AI subject & chapter classification — every note auto-tagged with keyword extraction.',
     ],
   },
   {
     group: 'SEARCH_ENGINE',
     items: [
-      'Ask questions in plain English across all your notes instantly.',
+      'Natural language queries across all notes via Pinecone vector similarity (top-8 results).',
       'Semantic search — finds meaning, not just keywords.',
+      'RAG Study Copilot — answers grounded in your own notes with 16-message history window.',
     ],
   },
   {
     group: 'REVISION_TOOLS',
     items: [
-      'Turn any note into ready-to-revise flashcards with one click.',
-      'AI-generated visual mind maps from your notes.',
-    ],
-  },
-  {
-    group: 'COLLABORATION_LAYER',
-    items: [
-      'Study together in real-time with Socket.io powered class rooms.',
-      'Live cursors, shared boards, instant sync.',
+      'One-click AI flashcard generation — 10 Q&A cards from any note.',
+      'AI-generated hierarchical mind maps rendered as visual knowledge trees.',
+      'Saved Items Panel — bookmark notes, flashcards, and questions for fast retrieval.',
     ],
   },
   {
     group: 'AI_TOOLS',
     items: [
-      'AI Tutor — beginner / intermediate / advanced levels.',
-      'Exam Predictor — generates practice questions from your notes.',
-      'Study Planner — AI builds your revision schedule.',
+      'AI Tutor — contextual tutoring at Beginner / Intermediate / Advanced levels.',
+      'Exam Predictor — MCQ, short & long answer questions with difficulty classification.',
+      'Study Planner — AI builds a day-by-day revision schedule from your exam date & weak topics.',
+      'Revision Reminders — cron-scheduled email delivery via Gmail SMTP.',
+    ],
+  },
+  {
+    group: 'COLLABORATION_LAYER',
+    items: [
+      'Class Hub — shared note board with live upvotes & real-time typing indicators.',
+      'Group Study Rooms — join via 6-character code, live member list, in-room AI quiz.',
+      'Real-time leaderboard during quizzes — all Socket.io powered.',
+    ],
+  },
+  {
+    group: 'WHATSAPP_BOT',
+    items: [
+      'Open mode — anyone messages the Twilio number for instant AI replies.',
+      'Linked mode — connect your account for note-aware answers & PDF ingestion over WhatsApp.',
+      '20-message context per phone number with 24-hour TTL auto-expiry.',
+    ],
+  },
+  {
+    group: 'GAMIFICATION_LAYER',
+    items: [
+      'XP & Levelling — earn XP for uploads, quizzes, and study sessions; 500 XP per level.',
+      'Badges: First Note · 3-Day Streak · Week Warrior · Quiz Master · AI Pilot · Team Player.',
+      'Performance Dashboard — subject readiness scores, weak-topic breakdown, weekly goal progress.',
     ],
   },
 ]
