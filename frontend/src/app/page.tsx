@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useAuthStore, useThemeStore } from '@/lib/store'
 import { useRouter } from 'next/navigation'
 
-// ── Data (from codebase only) ─────────────────────────────────────────────────
+// ── Data ──────────────────────────────────────────────────────────────────────
 const FEATURES = [
   {
     group: 'INGESTION_MODULE',
@@ -15,6 +15,7 @@ const FEATURES = [
       '3-strategy YouTube cascade: yt-dlp → Supadata API → youtubei.js — bypasses geo-blocks.',
       'Auto language detection & translation — upload in any language, indexed in English.',
       'AI subject & chapter classification — every note auto-tagged with keyword extraction.',
+      'File Vault — persistent file library separate from the notes index.',
     ],
   },
   {
@@ -23,6 +24,7 @@ const FEATURES = [
       'Natural language queries across all notes via Pinecone vector similarity (top-8 results).',
       'Semantic search — finds meaning, not just keywords.',
       'RAG Study Copilot — answers grounded in your own notes with 16-message history window.',
+      '0.6 relevance threshold ensures only truly matching notes are surfaced.',
     ],
   },
   {
@@ -37,8 +39,8 @@ const FEATURES = [
     group: 'AI_TOOLS',
     items: [
       'AI Tutor — contextual tutoring at Beginner / Intermediate / Advanced levels.',
-      'Exam Predictor — MCQ, short & long answer questions with difficulty classification.',
-      'Study Planner — AI builds a day-by-day revision schedule from your exam date & weak topics.',
+      'Exam Predictor — MCQ, short & long answer questions with difficulty classification (Easy / Medium / Hard).',
+      'Study Planner — AI builds a day-by-day revision schedule from your exam date & weak topics, with rest days built in.',
       'Revision Reminders — cron-scheduled email delivery via Gmail SMTP.',
     ],
   },
@@ -48,6 +50,7 @@ const FEATURES = [
       'Class Hub — shared note board with live upvotes & real-time typing indicators.',
       'Group Study Rooms — join via 6-character code, live member list, in-room AI quiz.',
       'Real-time leaderboard during quizzes — all Socket.io powered.',
+      'Live cursors, shared boards, instant sync across all participants.',
     ],
   },
   {
@@ -62,18 +65,19 @@ const FEATURES = [
     group: 'GAMIFICATION_LAYER',
     items: [
       'XP & Levelling — earn XP for uploads, quizzes, and study sessions; 500 XP per level.',
-      'Badges: First Note · 3-Day Streak · Week Warrior · Quiz Master · AI Pilot · Team Player.',
+      'Badges: First Note 📝 · 3-Day Streak 🔥 · Week Warrior ⚡ · Month Master 🏆 · Quiz Master 🎯 · AI Pilot 🤖 · Team Player 👥.',
+      'Streak tracking — current streak, longest streak, last study date.',
       'Performance Dashboard — subject readiness scores, weak-topic breakdown, weekly goal progress.',
     ],
   },
 ]
 
 const STACK: Record<string, string[]> = {
-  '// FRONTEND':          ['Next.js 14', 'React 18', 'TypeScript', 'Tailwind CSS', 'Framer Motion', 'Zustand', 'Socket.io', 'Axios'],
-  '// BACKEND':           ['Node.js ≥18', 'Express 4', 'Socket.io 4', 'JWT', 'Nodemailer', 'Multer', 'node-cron'],
-  '// DATABASE_STORAGE':  ['MongoDB Atlas', 'Mongoose', 'Pinecone Vector DB', 'Cloudinary CDN'],
-  '// AI_INTEGRATIONS':   ['Groq LLaMA 3.3', 'Google Gemini', 'Groq Whisper', 'Tesseract.js', 'Twilio WhatsApp', 'yt-dlp'],
-  '// DEPLOYMENT':        ['Vercel', 'Render', 'PWA'],
+  '// FRONTEND':         ['Next.js 14', 'React 18', 'TypeScript', 'Tailwind CSS', 'Framer Motion', 'Zustand', 'Socket.io', 'Axios'],
+  '// BACKEND':          ['Node.js ≥18', 'Express 4', 'Socket.io 4', 'JWT', 'Nodemailer', 'Multer', 'node-cron'],
+  '// DATABASE_STORAGE': ['MongoDB Atlas', 'Mongoose', 'Pinecone Vector DB', 'Cloudinary CDN'],
+  '// AI_INTEGRATIONS':  ['Groq LLaMA 3.3', 'Google Gemini', 'Groq Whisper', 'Tesseract.js', 'Twilio WhatsApp', 'yt-dlp'],
+  '// DEPLOYMENT':       ['Vercel', 'Render', 'PWA'],
 }
 
 // ── Theme tokens ──────────────────────────────────────────────────────────────
@@ -187,6 +191,7 @@ function FeatureCard({ group, items, index, tok }: { group: string; items: strin
         border: `1px solid ${hovered ? tok.yellow : tok.border}`,
         position: 'relative',
         transition: 'border-color 0.2s, background 0.2s',
+        height: '100%',
       }}
     >
       <div style={{
@@ -224,7 +229,7 @@ function FeatureCard({ group, items, index, tok }: { group: string; items: strin
   )
 }
 
-// ── Stack tag (own component — fixes useState-in-map hooks violation) ──────────
+// ── Stack tag ─────────────────────────────────────────────────────────────────
 function StackTag({ tech, tok }: { tech: string; tok: Tok }) {
   const [hov, setHov] = useState(false)
   return (
@@ -326,7 +331,6 @@ export default function HomePage() {
 
   const tok = dark ? DARK : LIGHT
 
-  // Auth redirect
   useEffect(() => {
     if (isAuthenticated()) router.replace('/dashboard')
   }, [])
@@ -340,7 +344,6 @@ export default function HomePage() {
 
   return (
     <>
-      {/* Inject cursor:none globally */}
       <style>{`
         * { cursor: none !important; }
         ::selection { background: #FBFF48; color: #000; }
@@ -435,11 +438,16 @@ export default function HomePage() {
               initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }}
               style={{ ...ibm, fontSize: 15, color: tok.fgDim, maxWidth: 560, lineHeight: 1.8, marginBottom: 32, transition: 'color 0.4s' }}
             >
-              Upload from anywhere. AI organises everything.<br />Search, revise and collaborate in real-time.
+              The unified knowledge platform that transforms PDFs, YouTube videos, voice recordings,
+              images, and WhatsApp messages into an intelligent, searchable, and collaborative study engine.
             </motion.p>
 
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.65 }} style={{ marginBottom: 40 }}>
-              {['> Specialized in AI-powered note management.','> Real-time collaboration via Socket.io.','> Multi-source ingestion: PDF, YouTube, voice, WhatsApp.'].map((line, i) => (
+              {[
+                '> 4-stage OCR + 3-strategy YouTube cascade — handles every real-world format.',
+                '> RAG Study Copilot grounded in your own notes via Pinecone semantic search.',
+                '> Real-time collaboration, WhatsApp bot, gamification & AI exam prediction.',
+              ].map((line, i) => (
                 <div key={i} style={{ ...ibm, fontSize: 13, color: tok.fgDim, marginBottom: 7, transition: 'color 0.4s' }}>{line}</div>
               ))}
             </motion.div>
@@ -447,6 +455,7 @@ export default function HomePage() {
             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.75 }} style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 48 }}>
               <div style={{ ...ibm, fontSize: 11, padding: '6px 14px', border: `1px solid ${tok.badgeDimB}`, color: tok.badgeDimC, letterSpacing: '0.08em', transition: 'border-color 0.4s, color 0.4s' }}>// LOCATION: WORLDWIDE</div>
               <div style={{ ...ibm, fontSize: 11, padding: '6px 14px', border: `1px solid ${tok.green}`, color: tok.green, letterSpacing: '0.08em', transition: 'border-color 0.4s, color 0.4s' }}>// STATUS: AI-POWERED · FREE</div>
+              <div style={{ ...ibm, fontSize: 11, padding: '6px 14px', border: `1px solid ${tok.blue}`, color: tok.blue, letterSpacing: '0.08em', transition: 'border-color 0.4s, color 0.4s' }}>// PWA: INSTALLABLE</div>
             </motion.div>
 
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.85 }} style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
@@ -473,7 +482,7 @@ export default function HomePage() {
         <section id="features" style={{ ...dotGrid, padding: '100px 32px' }}>
           <div style={{ maxWidth: 1200, margin: '0 auto' }}>
             <SectionTitle white="FEATURE" yellow="_LOG" tok={tok} />
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(300px,1fr))', gap: 1, background: tok.divBg, transition: 'background 0.4s' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 1, background: tok.divBg, transition: 'background 0.4s' }}>
               {FEATURES.map((f, i) => (
                 <div key={f.group} style={{ background: tok.bgCard, transition: 'background 0.4s' }}>
                   <FeatureCard group={f.group} items={f.items} index={i} tok={tok} />
@@ -518,13 +527,24 @@ export default function HomePage() {
             <h2 style={{ ...mono, fontSize: 'clamp(28px,5vw,48px)', fontWeight: 700, textTransform: 'uppercase', lineHeight: 1.1, marginBottom: 16, color: tok.fg, transition: 'color 0.4s' }}>
               JOIN THE<br /><span style={{ color: tok.yellow, transition: 'color 0.4s' }}>KNOWLEDGE HUB.</span>
             </h2>
-            <p style={{ ...ibm, fontSize: 14, color: tok.fgDim, marginBottom: 40, transition: 'color 0.4s' }}>Upload from anywhere. AI organises everything.</p>
-            <Link href="/sign-up">
-              <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
-                style={{ ...mono, fontSize: 14, fontWeight: 700, padding: '16px 48px', background: '#FBFF48', color: '#000', border: 'none', letterSpacing: '0.1em' }}>
-                GET STARTED FREE →
-              </motion.button>
-            </Link>
+            <p style={{ ...ibm, fontSize: 14, color: tok.fgDim, marginBottom: 40, transition: 'color 0.4s' }}>
+              Upload from anywhere. AI organises everything.<br />
+              No sign-up friction — use the demo account to explore instantly.
+            </p>
+            <div style={{ display: 'flex', gap: 16, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Link href="/sign-up">
+                <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
+                  style={{ ...mono, fontSize: 14, fontWeight: 700, padding: '16px 48px', background: '#FBFF48', color: '#000', border: 'none', letterSpacing: '0.1em' }}>
+                  GET STARTED FREE →
+                </motion.button>
+              </Link>
+              <a href="https://notenexus-azure.vercel.app" target="_blank" rel="noopener noreferrer">
+                <motion.button whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
+                  style={{ ...mono, fontSize: 14, fontWeight: 700, padding: '16px 48px', background: 'transparent', color: tok.btnSecC, border: `1px solid ${tok.btnSecB}`, letterSpacing: '0.1em', transition: 'color 0.4s, border-color 0.4s' }}>
+                  LIVE DEMO ↗
+                </motion.button>
+              </a>
+            </div>
           </motion.div>
         </section>
 
