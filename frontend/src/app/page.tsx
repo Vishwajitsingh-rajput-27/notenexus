@@ -46,10 +46,11 @@ const FEATURES = [
 ]
 
 const STACK: Record<string, string[]> = {
-  '// FRONTEND': ['Next.js 14', 'React 18', 'Framer Motion', 'Tailwind CSS', 'TypeScript'],
-  '// STATE':    ['Zustand', 'React Hot Toast'],
-  '// NETWORK':  ['Axios', 'Socket.io Client'],
-  '// UTILS':    ['React Dropzone', 'JS Cookie', 'React Icons'],
+  '// FRONTEND':          ['Next.js 14', 'React 18', 'TypeScript', 'Tailwind CSS', 'Framer Motion', 'Zustand', 'Socket.io', 'Axios'],
+  '// BACKEND':           ['Node.js ≥18', 'Express 4', 'Socket.io 4', 'JWT', 'Nodemailer', 'Multer', 'node-cron'],
+  '// DATABASE_STORAGE':  ['MongoDB Atlas', 'Mongoose', 'Pinecone Vector DB', 'Cloudinary CDN'],
+  '// AI_INTEGRATIONS':   ['Groq LLaMA 3.3', 'Google Gemini', 'Groq Whisper', 'Tesseract.js', 'Twilio WhatsApp', 'yt-dlp'],
+  '// DEPLOYMENT':        ['Vercel', 'Render', 'PWA'],
 }
 
 // ── Theme tokens ──────────────────────────────────────────────────────────────
