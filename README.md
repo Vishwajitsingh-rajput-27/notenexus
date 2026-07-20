@@ -662,12 +662,12 @@ Indira College of Engineering and Management, Pune
 <br/>
 
 [![GitHub](https://img.shields.io/badge/GitHub-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/Vishwajitsingh-rajput-27)
-[![Instagram](https://img.shields.io/badge/Instagram-E4405F?style=for-the-badge&logo=instagram&logoColor=white)](https://instagram.com/vishwajit._.27)
+[![Instagram](https://img.shields.io/badge/Instagram-E4405F?style=for-the-badge&logo=instagram&logoColor=white)](https://instagram.com/vishwajit._.25)
 
 </div>
 
 ---
-
+l
 <div align="center">
 
 *Built with precision and passion — for every student who deserves smarter tools.*
