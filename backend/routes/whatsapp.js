@@ -55,7 +55,7 @@ const Reminder  = require('../models/Reminder');
 // Services
 const { upload, cloudinary } = require('../config/cloudinary');
 const { groqCall }           = require('../utils/groq');
-const { extractFromPDF, extractFromImage, extractImagesFromPDF } = require('../services/ingestionService');
+const { extractFromPDF, extractFromImage, extractFromVoice, extractImagesFromPDF } = require('../services/ingestionService');
 const { detectSubjectChapter, translateToEnglish } = require('../services/aiService');
 const { storeEmbedding, semanticSearch }           = require('../services/vectorService');
 
@@ -400,6 +400,15 @@ async function handleIncomingPDF(session, mediaUrl, from) {
       pineconeId:      noteId,
       extractedImages: allImages,
     });
+    await FileVault.create({
+      userId: session.userId,
+      noteId: note._id,
+      name: `${autoTitle}.pdf`,
+      fileType: 'pdf',
+      mimeType: 'application/pdf',
+      fileUrl: pdfUrl,
+      subject: meta.subject,
+    });
 
     await storeEmbedding(noteId, englishText, {
       userId:     session.userId.toString(),
@@ -458,6 +467,15 @@ async function handleIncomingImage(session, mediaUrl, from) {
       keywords:   meta.keywords || [],
       pineconeId: noteId,
     });
+    await FileVault.create({
+      userId: session.userId,
+      noteId: note._id,
+      name: `${autoTitle}.image`,
+      fileType: 'image',
+      mimeType: 'image/jpeg',
+      fileUrl: mediaUrl,
+      subject: meta.subject,
+    });
 
     await storeEmbedding(noteId, englishText, {
       userId:     session.userId.toString(),
@@ -476,6 +494,54 @@ async function handleIncomingImage(session, mediaUrl, from) {
   } catch (err) {
     log.error('Image processing failed', err);
     await sendWhatsApp(from, '❌ Failed to process your image. Please try again.');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// VOICE HANDLER
+// ---------------------------------------------------------------------------
+
+async function handleIncomingVoice(session, mediaUrl, from) {
+  try {
+    await sendWhatsApp(from, '🎙 Voice note received! Transcribing it now... ⏳');
+    const extractedText = await extractFromVoice(mediaUrl);
+    if (!extractedText || !extractedText.trim()) {
+      return sendWhatsApp(from, '⚠️ I could not hear any words in that voice note. Please try a clearer recording.');
+    }
+
+    const englishText = await translateToEnglish(extractedText);
+    const meta = await detectSubjectChapter(englishText);
+    const autoTitle = `${meta.subject} -- ${meta.chapter}`;
+    const noteId = uuidv4();
+    const note = await Note.create({
+      userId: session.userId,
+      title: autoTitle,
+      content: englishText,
+      sourceType: 'voice',
+      fileUrl: mediaUrl,
+      subject: meta.subject,
+      chapter: meta.chapter,
+      keywords: meta.keywords || [],
+      pineconeId: noteId,
+    });
+    await FileVault.create({
+      userId: session.userId,
+      noteId: note._id,
+      name: `${autoTitle}.audio`,
+      fileType: 'voice',
+      mimeType: 'audio/mpeg',
+      fileUrl: mediaUrl,
+      subject: meta.subject,
+    });
+    await storeEmbedding(noteId, englishText, {
+      userId: session.userId.toString(), noteId: note._id.toString(),
+      subject: meta.subject, chapter: meta.chapter, sourceType: 'voice',
+      fileUrl: mediaUrl, title: autoTitle,
+    });
+    return sendWhatsApp(from, `✅ *Voice Note Saved!*\n\n*${autoTitle}*\nSubject: ${meta.subject} | Chapter: ${meta.chapter}\n\n${englishText.slice(0, 700)}`);
+  } catch (err) {
+    log.error('Voice processing failed', err);
+    return sendWhatsApp(from, '❌ Failed to transcribe that voice note. Please try again.');
   }
 }
 
@@ -521,7 +587,8 @@ router.post('/webhook', async (req, res) => {
       const contentType = (MediaContentType0 || '').toLowerCase();
       if (contentType === 'application/pdf') return handleIncomingPDF(session, MediaUrl0, from);
       if (contentType.startsWith('image/'))  return handleIncomingImage(session, MediaUrl0, from);
-      return sendWhatsApp(from, `Unsupported file type: ${contentType}\n\nSupported: PDF, JPG, PNG`);
+      if (contentType.startsWith('audio/') || contentType.startsWith('video/')) return handleIncomingVoice(session, MediaUrl0, from);
+      return sendWhatsApp(from, `Unsupported file type: ${contentType}\n\nSupported: PDF, JPG, PNG, MP3, M4A, WAV`);
     }
 
     // ---- Universal commands ----
