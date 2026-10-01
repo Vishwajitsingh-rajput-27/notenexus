@@ -4,6 +4,22 @@ const router    = express.Router();
 const auth      = require('../middleware/auth');
 const SavedItem = require('../models/SavedItem');
 
+const isRenderableSavedItem = (item) => {
+  const data = item?.data;
+  if (!data) return false;
+  if (item.type === 'flashcards') {
+    return Array.isArray(data.cards) && data.cards.some((card) =>
+      card?.question && card.question.toLowerCase() !== 'error' &&
+      card?.answer && !/^please try again/i.test(card.answer)
+    );
+  }
+  if (item.type === 'mindmap') return Boolean(data.root && Array.isArray(data.children));
+  if (item.type === 'studyplan') return Array.isArray((data.plan || data).dailyPlan);
+  if (item.type === 'examquestions' || item.type === 'quiz') return Array.isArray(data.questions) && data.questions.length > 0;
+  if (item.type === 'chat') return Array.isArray(data.history) && data.history.length > 0;
+  return true;
+};
+
 // ── POST /api/saved ─────────────────────────────────────────────────────────
 // Save a new item (mindmap / flashcards / chat / studyplan / examquestions)
 router.post('/', auth, async (req, res) => {
@@ -24,7 +40,7 @@ router.get('/', auth, async (req, res) => {
   try {
     const filter = { userId: req.user.id };
     if (req.query.type) filter.type = req.query.type;
-    const items = await SavedItem.find(filter).sort({ createdAt: -1 }).limit(100).lean();
+    const items = (await SavedItem.find(filter).sort({ createdAt: -1 }).limit(100).lean()).filter(isRenderableSavedItem);
     res.json({ items });
   } catch (err) {
     log.error('Get saved items failed', err);
