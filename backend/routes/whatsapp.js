@@ -49,6 +49,8 @@ const { WhatsAppSession, WhatsAppLinkCode } = require('../models/WhatsAppSession
 const WhatsAppConversation = require('../models/WhatsAppConversation');
 const Note      = require('../models/Note');
 const FileVault = require('../models/FileVault');
+const User      = require('../models/User');
+const Reminder  = require('../models/Reminder');
 
 // Services
 const { upload, cloudinary } = require('../config/cloudinary');
@@ -98,6 +100,11 @@ const HELP_TEXT = `*NoteNexus AI* 🤖  — Ask me anything!
   streak — see your current streak & XP
   analytics — view your readiness scores
   badges — see your earned badges
+  reminders — list active reminders
+  cancel reminder <N> — cancel a reminder
+  remind me: Topic | Subject | today 18:00
+  remind me: Topic | Subject | every 3 days 09:00
+  remind me: Topic | Subject | every 30 minutes
   
 *⚙️ ACCOUNT*
   link CODE — connect your account
@@ -113,6 +120,63 @@ const HELP_TEXT = `*NoteNexus AI* 🤖  — Ask me anything!
 _Conversation remembered 24 hours._`;
 
 const VAULT_ICON = { pdf: '📄', image: '🖼️', voice: '🎙️', link: '🔗', other: '📎' };
+
+function parseReminderCommand(input, now = new Date()) {
+  const match = input.match(/^remind me:\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+)$/i);
+  if (!match) return null;
+
+  const topic = match[1].trim();
+  const subject = match[2].trim();
+  const schedule = match[3].trim().toLowerCase();
+  if (!topic || !subject) return { error: 'Use: remind me: topic | subject | schedule' };
+
+  const timeToDate = (dateText, timeText = '09:00') => {
+    const time = timeText.match(/^(\d{1,2}):(\d{2})$/);
+    if (!time || Number(time[1]) > 23 || Number(time[2]) > 59) return null;
+    const date = new Date(dateText);
+    if (Number.isNaN(date.getTime())) return null;
+    date.setHours(Number(time[1]), Number(time[2]), 0, 0);
+    return date;
+  };
+
+  let intervalDays = null;
+  let intervalMinutes = null;
+  let reminderTime = '09:00';
+  let oneShotAt = null;
+  let isOneShot = false;
+  let scheduleType = 'repeating';
+
+  let m = schedule.match(/^every\s+(\d+)\s+days?(?:\s+(\d{1,2}:\d{2}))?$/i);
+  if (m) {
+    intervalDays = Math.max(1, Number(m[1]));
+    reminderTime = m[2] || reminderTime;
+    if (!/^\d{1,2}:\d{2}$/.test(reminderTime)) return { error: 'Use a valid time such as 09:00.' };
+  } else if ((m = schedule.match(/^every\s+(\d+)\s+minutes?$/i))) {
+    intervalMinutes = Math.max(1, Number(m[1]));
+    scheduleType = 'interval_minutes';
+  } else if ((m = schedule.match(/^today\s+(\d{1,2}:\d{2})$/i))) {
+    oneShotAt = timeToDate(now, m[1]);
+    isOneShot = true;
+    scheduleType = 'one_shot';
+  } else if ((m = schedule.match(/^on\s+(\d{4}-\d{2}-\d{2})\s+(\d{1,2}:\d{2})$/i))) {
+    oneShotAt = timeToDate(m[1], m[2]);
+    isOneShot = true;
+    scheduleType = 'one_shot';
+  } else {
+    return { error: 'Schedule must be like `today 18:00`, `on 2026-10-15 10:00`, `every 3 days 09:00`, or `every 30 minutes`.' };
+  }
+
+  if (isOneShot && (!oneShotAt || oneShotAt <= now)) return { error: 'That reminder time is invalid or already in the past.' };
+  if (intervalDays && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(reminderTime)) return { error: 'Use a valid time such as 09:00.' };
+
+  const nextReminder = isOneShot
+    ? oneShotAt
+    : intervalMinutes
+      ? new Date(now.getTime() + intervalMinutes * 60 * 1000)
+      : new Date(now.getTime() + intervalDays * 24 * 60 * 60 * 1000);
+
+  return { topic, subject, intervalDays, intervalMinutes, reminderTime, oneShotAt, isOneShot, scheduleType, nextReminder };
+}
 
 // ---------------------------------------------------------------------------
 // TWILIO HELPERS
@@ -226,10 +290,12 @@ async function askAI(question, history, userId) {
 
   if (userId) {
     try {
-      const results = await semanticSearch(question, userId, { topK: 3, minScore: 0.6 });
-      if (results.length > 0) {
+      const results = await semanticSearch(question, userId, 3);
+      const relevant = results.filter((result) => (result.score ?? 0) >= 0.6);
+      if (relevant.length > 0) {
         const snippets = results
-          .map((r, i) => `[Note ${i + 1}: ${r.metadata && r.metadata.title ? r.metadata.title : 'untitled'}]\n${r.metadata && r.metadata.text ? r.metadata.text.slice(0, 400) : ''}`)
+          .filter((result) => (result.score ?? 0) >= 0.6)
+          .map((r, i) => `[Note ${i + 1}: ${r.metadata && r.metadata.title ? r.metadata.title : 'untitled'}]\n${r.metadata && (r.metadata.text || r.metadata.content) ? (r.metadata.text || r.metadata.content).slice(0, 400) : ''}`)
           .join('\n\n');
         noteContext = `\n\nRelevant notes from this user's library:\n${snippets}\n\nUse these notes as additional context if helpful, but still answer even if they are not directly relevant.`;
       }
@@ -527,6 +593,58 @@ router.post('/webhook', async (req, res) => {
 
     if (session) {
 
+      // ── REMINDER COMMANDS ────────────────────────────────────────────────
+      if (text === 'reminders' || text === 'my reminders' || text === 'list reminders') {
+        const reminders = await Reminder.find({ user: session.userId, active: true }).sort({ nextReminder: 1 }).limit(20);
+        if (!reminders.length) return sendWhatsApp(from, '⏰ You have no active reminders.\n\nTry: remind me: Calculus | Maths | today 18:00');
+        const lines = reminders.map((reminder, index) => {
+          const when = new Date(reminder.nextReminder).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' });
+          return `${index + 1}. *${reminder.topic}* | ${reminder.subject}\n   ${when}`;
+        });
+        return sendWhatsApp(from, `*Active Reminders* (${reminders.length})\n\n${lines.join('\n\n')}\n\nType *cancel reminder <N>* to cancel one.`);
+      }
+
+      const cancelMatch = text.match(/^cancel reminder (\d+)$/);
+      if (cancelMatch) {
+        const index = Number(cancelMatch[1]);
+        const reminders = await Reminder.find({ user: session.userId, active: true }).sort({ nextReminder: 1 }).limit(20);
+        const reminder = reminders[index - 1];
+        if (!reminder) return sendWhatsApp(from, `❌ Active reminder #${index} was not found. Type *reminders* to see the list.`);
+        reminder.active = false;
+        await reminder.save();
+        return sendWhatsApp(from, `✅ Cancelled reminder: *${reminder.topic}* (${reminder.subject}).`);
+      }
+
+      if (text.startsWith('remind me:')) {
+        const parsed = parseReminderCommand(rawText);
+        if (!parsed || parsed.error) {
+          return sendWhatsApp(from, `❌ ${parsed?.error || 'Use: remind me: topic | subject | schedule'}`);
+        }
+        const user = await User.findById(session.userId).select('email');
+        if (!user) return sendWhatsApp(from, '❌ Your linked account could not be found. Please link it again.');
+        await Reminder.create({
+          user: session.userId,
+          subject: parsed.subject,
+          topic: parsed.topic,
+          email: user.email,
+          phone: from,
+          intervalDays: parsed.intervalDays,
+          intervalMinutes: parsed.intervalMinutes,
+          reminderTime: parsed.reminderTime,
+          oneShotAt: parsed.oneShotAt,
+          isOneShot: parsed.isOneShot,
+          nextReminder: parsed.nextReminder,
+          sendEmail: false,
+          sendWhatsApp: true,
+        });
+        const when = parsed.isOneShot
+          ? parsed.oneShotAt.toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short' })
+          : parsed.intervalMinutes
+            ? `every ${parsed.intervalMinutes} minutes`
+            : `every ${parsed.intervalDays} day${parsed.intervalDays === 1 ? '' : 's'} at ${parsed.reminderTime}`;
+        return sendWhatsApp(from, `✅ Reminder set!\n\n*${parsed.topic}* | ${parsed.subject}\n⏰ ${when}\n\nType *reminders* to list or *cancel reminder 1* to cancel.`);
+      }
+
       // ── VAULT FILE COMMANDS ──────────────────────────────────────────────
       const vaultTypes = { 'files pdf': 'pdf', 'files image': 'image', 'files images': 'image', 'files voice': 'voice', 'files link': 'link', 'files links': 'link' };
 
@@ -645,7 +763,13 @@ router.post('/webhook', async (req, res) => {
     log.info('AI query', { from, question: rawText.slice(0, 100) });
 
     const history = convo.getHistory();
-    const aiReply = await askAI(rawText, history, userId);
+    let aiReply;
+    try {
+      aiReply = await askAI(rawText, history, userId);
+    } catch (err) {
+      log.error('WhatsApp AI query failed', { from, error: err.message });
+      return sendWhatsApp(from, '⚠️ I could not reach the AI service right now. Please try again in a moment.');
+    }
 
     await saveExchange(convo, rawText, aiReply);
 
@@ -786,4 +910,5 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
+router.parseReminderCommand = parseReminderCommand;
 module.exports = router;
