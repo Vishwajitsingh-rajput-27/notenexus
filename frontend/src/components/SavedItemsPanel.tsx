@@ -335,12 +335,13 @@ export function SaveBar({ type, data, subject, defaultName = '' }: SaveBarProps)
 interface SavedItemsPanelProps {
   type:   SavedItemType
   onLoad: (item: any) => void
+  label?: string
 }
 
-export function SavedItemsPanel({ type, onLoad }: SavedItemsPanelProps) {
+export function SavedItemsPanel({ type, onLoad, label: customLabel }: SavedItemsPanelProps) {
   const t      = useTheme()
   const accent = TYPE_ACCENT[type]
-  const label  = TYPE_LABEL[type]
+  const label  = customLabel || TYPE_LABEL[type]
 
   const [open,    setOpen]    = useState(false)
   const [items,   setItems]   = useState<any[]>([])

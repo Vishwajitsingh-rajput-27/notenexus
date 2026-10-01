@@ -459,7 +459,7 @@ const YoutubeTranscript = {
 // ── Translate transcript text to English via Groq ─────────────────────────────
 /**
  * Detects the language of the text and, if it is not English, translates it
- * to English using Groq (llama-3.3-70b-versatile, already configured).
+ * to English using the configured Groq model.
  *
  * Strategy:
  *  1. Send the first 500 characters to Groq for language detection.

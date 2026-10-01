@@ -1,43 +1,40 @@
 /**
- * utils/groq.js — Shared Groq API client
+ * Shared Groq API client.
  *
- * A single, well-tested implementation used by every route that needs
- * to call the Groq inference API.  Previously, groqCall() was copy-pasted
- * into whatsapp.js, tutor.js, studyPlanner.js, and examPredictor.js with
- * subtly different timeout/temperature values.
+ * Model IDs are configurable because hosted model availability changes over time.
+ * The client retries once with a known fallback when Groq reports a model access
+ * or deprecation error, so one stale deployment setting cannot break every AI tool.
  */
 
 const https = require('https');
 
-/**
- * Call the Groq chat-completions endpoint.
- *
- * @param {Array|string} messages  - Full messages array OR a single string prompt
- *                                   (a string is wrapped in [{ role:'user', content }])
- * @param {object}       [opts]
- * @param {number}       [opts.maxTokens=1024]
- * @param {number}       [opts.temperature=0.3]
- * @param {string}       [opts.model='llama-3.3-70b-versatile']
- * @param {number}       [opts.timeoutMs=30000]
- * @returns {Promise<string>}
- */
-const groqCall = (messages, opts = {}) => {
-  const {
-    maxTokens   = 1024,
-    temperature = 0.3,
-    model       = 'llama-3.3-70b-versatile',
-    timeoutMs   = 30_000,
-  } = opts;
+const DEFAULT_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
+const FALLBACK_MODELS = [
+  DEFAULT_MODEL,
+  process.env.GROQ_FALLBACK_MODEL || 'meta-llama/llama-4-scout-17b-16e-instruct',
+].filter((model, index, models) => model && models.indexOf(model) === index);
 
-  // Allow callers to pass a plain string instead of a messages array
-  const normalised = typeof messages === 'string'
-    ? [{ role: 'user', content: messages }]
-    : messages;
+const isModelAvailabilityError = (message = '') => {
+  const text = message.toLowerCase();
+  return text.includes('model') && (
+    text.includes('does not exist') ||
+    text.includes('not found') ||
+    text.includes('deprecat') ||
+    text.includes('do not have access') ||
+    text.includes('access to it')
+  );
+};
 
-  return new Promise((resolve, reject) => {
+const requestModel = (messages, { maxTokens, temperature, timeoutMs }, model) =>
+  new Promise((resolve, reject) => {
+    if (!process.env.GROQ_API_KEY) {
+      reject(new Error('AI service is not configured: GROQ_API_KEY is missing.'));
+      return;
+    }
+
     const body = JSON.stringify({
       model,
-      messages: normalised,
+      messages,
       max_tokens: maxTokens,
       temperature,
     });
@@ -59,11 +56,18 @@ const groqCall = (messages, opts = {}) => {
       res.on('end', () => {
         try {
           const parsed = JSON.parse(data);
-          if (parsed.error) return reject(new Error(parsed.error.message));
+          if (parsed.error) {
+            const error = new Error(parsed.error.message || 'Groq request failed');
+            error.code = parsed.error.code;
+            error.status = res.statusCode;
+            reject(error);
+            return;
+          }
           const text = parsed.choices?.[0]?.message?.content ?? '';
-          resolve(text);
+          if (!text.trim()) reject(new Error('AI service returned an empty response.'));
+          else resolve(text);
         } catch (err) {
-          reject(err);
+          reject(new Error(`Invalid response from AI service: ${err.message}`));
         }
       });
     });
@@ -76,26 +80,52 @@ const groqCall = (messages, opts = {}) => {
     req.write(body);
     req.end();
   });
-};
 
 /**
- * Extract a JSON value from a raw string that may contain markdown fences
- * or surrounding prose.
- *
- * @param {string} raw
- * @param {'array'|'object'} [type='array']
- * @returns {Array|object}
+ * @param {Array|string} messages Full messages array or a single prompt string
+ * @param {object} [opts]
+ * @param {number} [opts.maxTokens=1024]
+ * @param {number} [opts.temperature=0.3]
+ * @param {string} [opts.model] Optional explicit model override
+ * @param {number} [opts.timeoutMs=30000]
  */
+const groqCall = async (messages, opts = {}) => {
+  const {
+    maxTokens = 1024,
+    temperature = 0.3,
+    model,
+    timeoutMs = 30_000,
+  } = opts;
+
+  const normalised = typeof messages === 'string'
+    ? [{ role: 'user', content: messages }]
+    : messages;
+  const models = model ? [model, ...FALLBACK_MODELS.filter((candidate) => candidate !== model)] : FALLBACK_MODELS;
+  let lastError;
+
+  for (const candidate of models) {
+    try {
+      return await requestModel(normalised, { maxTokens, temperature, timeoutMs }, candidate);
+    } catch (err) {
+      lastError = err;
+      if (!isModelAvailabilityError(err.message)) throw err;
+    }
+  }
+
+  throw new Error(`No configured Groq model is available. Tried: ${models.join(', ')}.`);
+};
+
+/** Extract a JSON value from model output that may contain markdown fences/prose. */
 const extractJSON = (raw, type = 'array') => {
   try {
     const cleaned = (raw ?? '').replace(/```json|```/gi, '').trim();
     if (type === 'array') {
       const start = cleaned.indexOf('[');
-      const end   = cleaned.lastIndexOf(']');
+      const end = cleaned.lastIndexOf(']');
       if (start !== -1 && end !== -1) return JSON.parse(cleaned.slice(start, end + 1));
     } else {
       const start = cleaned.indexOf('{');
-      const end   = cleaned.lastIndexOf('}');
+      const end = cleaned.lastIndexOf('}');
       if (start !== -1 && end !== -1) return JSON.parse(cleaned.slice(start, end + 1));
     }
     return JSON.parse(cleaned);
@@ -104,4 +134,4 @@ const extractJSON = (raw, type = 'array') => {
   }
 };
 
-module.exports = { groqCall, extractJSON };
+module.exports = { groqCall, extractJSON, DEFAULT_MODEL };

@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import api from '@/lib/api'
+import api, { apiGetNotes } from '@/lib/api'
 import toast from 'react-hot-toast'
 
 const mono = "'Space Mono','Courier New',monospace"
@@ -29,7 +29,15 @@ export default function StudyCopilot({ dark }: { dark: boolean }) {
   const green = '#4ADE80'; const red = '#FF3B3B'; const yellow = '#FBFF48'; const blue = '#60A5FA'
 
   useEffect(() => {
-    api.get('/notes/subjects').then(r => setSubjects(r.data.subjects || [])).catch(() => {})
+    Promise.allSettled([
+      api.get('/notes/subjects'),
+      apiGetNotes(),
+    ]).then(([subjectsResult, notesResult]) => {
+      const endpointSubjects = subjectsResult.status === 'fulfilled' ? subjectsResult.value.data.subjects || [] : []
+      const notes = notesResult.status === 'fulfilled' ? notesResult.value.notes || [] : []
+      const noteSubjects = notes.map((note: any) => note.subject).filter(Boolean)
+      setSubjects(Array.from(new Set([...endpointSubjects, ...noteSubjects])))
+    })
     api.get('/copilot/daily-question').then(r => setDailyQ(r.data)).catch(() => {})
   }, [])
 

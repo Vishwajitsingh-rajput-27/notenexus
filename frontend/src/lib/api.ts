@@ -233,6 +233,8 @@ export const apiJoinRoom = async (code: string) => {
 
 // ── Saved Items ───────────────────────────────────────────────────────────────
 
+export type SavedItemType = 'mindmap' | 'flashcards' | 'chat' | 'studyplan' | 'examquestions' | 'quiz'
+
 export const apiGetSaved = async () => {
   const { data } = await api.get('/saved')
   return data
@@ -247,6 +249,13 @@ export const apiDeleteSaved = async (id: string) => {
   const { data } = await api.delete(`/saved/${id}`)
   return data
 }
+
+// Compatibility aliases used by SavedItemsPanel.
+export const apiGetSavedItems = async (type?: SavedItemType) => {
+  const { data } = await api.get('/saved', { params: type ? { type } : undefined })
+  return data
+}
+export const apiDeleteSavedItem = apiDeleteSaved
 
 // ── File Vault ────────────────────────────────────────────────────────────────
 

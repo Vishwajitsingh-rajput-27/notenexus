@@ -16,7 +16,7 @@
  *     - AI answers use their saved notes as extra context
  *
  * AI ENGINE
- *   Uses Groq (llama-3.3-70b-versatile) via utils/groq.js.
+ *   Uses the configured Groq model via utils/groq.js.
  *   The full conversation history is sent with every request so the
  *   bot can remember earlier parts of the chat.
  *
@@ -247,7 +247,6 @@ async function askAI(question, history, userId) {
   const reply = await groqCall(messages, {
     maxTokens:   700,
     temperature: 0.7,
-    model:       'llama-3.3-70b-versatile',
     timeoutMs:   30_000,
   });
 

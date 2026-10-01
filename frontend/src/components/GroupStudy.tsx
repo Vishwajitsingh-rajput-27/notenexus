@@ -37,6 +37,7 @@ export default function GroupStudy({ dark }: { dark: boolean }) {
   const [quizLoading, setQuizLoading] = useState(false)
   const [createLoading, setCreateLoading] = useState(false)
   const [joinLoading, setJoinLoading] = useState(false)
+  const [joinError, setJoinError] = useState('')
   const timerRef = useRef<any>(null)
 
   const fg     = dark ? '#fff'  : '#111'
@@ -162,7 +163,11 @@ export default function GroupStudy({ dark }: { dark: boolean }) {
   }
 
   const joinRoom = async () => {
-    if (!joinCode.trim()) return toast.error('Enter a room code')
+    if (!joinCode.trim()) {
+      setJoinError('Enter a room code')
+      return toast.error('Enter a room code')
+    }
+    setJoinError('')
     setJoinLoading(true)
     try {
       const r = await api.post('/rooms/join', { code: joinCode.trim().toUpperCase() })
@@ -171,9 +176,12 @@ export default function GroupStudy({ dark }: { dark: boolean }) {
       setRoomCode(newRoom.code)
       socket?.emit('join-study-room', { roomCode: newRoom.code, userName: myName })
       setView('room')
+      setJoinError('')
       toast.success('Joined room!')
     } catch (e: any) {
-      toast.error(e.response?.data?.error || 'Room not found')
+      const message = e.response?.data?.error || 'Room not found or no longer available'
+      setJoinError(message)
+      toast.error(message)
     } finally { setJoinLoading(false) }
   }
 
@@ -259,7 +267,7 @@ export default function GroupStudy({ dark }: { dark: boolean }) {
         <div style={{ ...BENTO(dark), display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div style={{ fontFamily: mono, fontSize: 11, letterSpacing: '0.06em', color: '#60A5FA' }}>🔗 JOIN ROOM</div>
           <input
-            value={joinCode} onChange={e => setJoinCode(e.target.value.toUpperCase())}
+            value={joinCode} onChange={e => { setJoinCode(e.target.value.toUpperCase()); setJoinError('') }}
             placeholder="ENTER CODE" maxLength={6}
             style={{ ...inputStyle, fontSize: 18, letterSpacing: '0.25em', textAlign: 'center', fontFamily: mono }}
             onKeyDown={e => e.key === 'Enter' && joinRoom()}
@@ -268,6 +276,7 @@ export default function GroupStudy({ dark }: { dark: boolean }) {
             style={{ ...btnSecondary, opacity: joinLoading ? 0.6 : 1 }}>
             {joinLoading ? 'Joining...' : '→ Join Room'}
           </motion.button>
+          {joinError && <div style={{ color: red, fontSize: 11, lineHeight: 1.5 }}>{joinError}</div>}
         </div>
       </div>
     </div>

@@ -166,6 +166,20 @@ ${text.slice(0, 4_000)}`,
   }
 };
 
+const splitSentences = (text) => text
+  .replace(/\s+/g, ' ')
+  .split(/(?<=[.!?])\s+/)
+  .map((sentence) => sentence.trim())
+  .filter(Boolean);
+
+const fallbackFlashcards = (text) => {
+  const cards = splitSentences(text).slice(0, 10).map((sentence, index) => ({
+    question: `What is the key point in statement ${index + 1}?`,
+    answer: sentence,
+  }));
+  return cards.length > 0 ? cards : [{ question: 'What is the main topic?', answer: text.slice(0, 200) }];
+};
+
 const generateFlashcards = async (text) => {
   try {
     const raw = await groqCall(
@@ -178,11 +192,12 @@ ${text.slice(0, 4_000)}`,
       { maxTokens: 1_500 }
     );
     const cards = extractJSON(raw, 'array');
-    if (Array.isArray(cards) && cards.length > 0) return cards;
-    return [{ question: 'What is the main topic?', answer: text.slice(0, 100) }];
+    if (Array.isArray(cards) && cards.length > 0 && cards.every((card) => card?.question && card?.answer)) return cards;
+    log.warn('AI returned invalid flashcards; using deterministic fallback');
+    return fallbackFlashcards(text);
   } catch (err) {
     log.error('generateFlashcards failed', err);
-    return [{ question: 'Error', answer: 'Please try again' }];
+    return fallbackFlashcards(text);
   }
 };
 
@@ -199,16 +214,26 @@ ${text.slice(0, 4_000)}`,
       { maxTokens: 2_000 }
     );
     const questions = extractJSON(raw, 'array');
-    if (Array.isArray(questions) && questions.length > 0) return questions;
-    return [{
-      question: 'Summarise the main points',
+    if (Array.isArray(questions) && questions.length > 0 && questions.every((q) => q?.question && q?.answer)) return questions;
+    log.warn('AI returned invalid questions; using deterministic fallback');
+    return splitSentences(text).slice(0, 10).map((sentence, index) => ({
+      question: `Explain the significance of this point: ${sentence}`,
       type: 'short_answer',
-      hint: 'Check notes',
-      answer: 'Review your notes for key concepts.',
-    }];
+      hint: 'Use the supplied notes.',
+      answer: sentence,
+      topic: `Note point ${index + 1}`,
+      difficulty: 'Easy',
+    }));
   } catch (err) {
     log.error('generateQuestions failed', err);
-    return [{ question: 'Error', type: 'short_answer', hint: 'Try again', answer: 'Please try again.' }];
+    return splitSentences(text).slice(0, 10).map((sentence, index) => ({
+      question: `Explain the significance of this point: ${sentence}`,
+      type: 'short_answer',
+      hint: 'Use the supplied notes.',
+      answer: sentence,
+      topic: `Note point ${index + 1}`,
+      difficulty: 'Easy',
+    }));
   }
 };
 
@@ -224,11 +249,26 @@ ${text.slice(0, 3_000)}`,
       { maxTokens: 1_000 }
     );
     const map = extractJSON(raw, 'object');
-    if (map?.root) return map;
-    return { root: 'Notes', children: [{ label: 'Main Topic', children: [] }] };
+    if (map?.root && Array.isArray(map.children) && map.children.length > 0) return map;
+    log.warn('AI returned an incomplete mind map; using deterministic fallback');
+    const sentences = splitSentences(text);
+    return {
+      root: sentences[0]?.split(':')[0]?.slice(0, 80) || 'Study Notes',
+      children: (sentences.length ? sentences : [text]).slice(0, 8).map((sentence) => ({
+        label: sentence.slice(0, 120),
+        children: [],
+      })),
+    };
   } catch (err) {
     log.error('generateMindmap failed', err);
-    return { root: 'Notes', children: [] };
+    const sentences = splitSentences(text);
+    return {
+      root: sentences[0]?.split(':')[0]?.slice(0, 80) || 'Study Notes',
+      children: (sentences.length ? sentences : [text]).slice(0, 8).map((sentence) => ({
+        label: sentence.slice(0, 120),
+        children: [],
+      })),
+    };
   }
 };
 

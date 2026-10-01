@@ -12,7 +12,7 @@ const log = require('../utils/logger')('tutor');
 const express = require('express');
 const router  = express.Router();
 const auth    = require('../middleware/auth');
-const { groqCall, extractJSON } = require('../utils/groq');
+const { groqCall, extractJSON, DEFAULT_MODEL } = require('../utils/groq');
 const { semanticSearch }        = require('../services/vectorService');
 
 // ── System prompts ────────────────────────────────────────────────────────────
@@ -134,7 +134,7 @@ router.post('/ask', auth, async (req, res) => {
       reply,
       notesContextUsed,
       notesUsed:       relevantNotes.map((n) => ({ title: n.title, score: n.score })),
-      usedModel:       'groq/llama-3.3-70b',
+      usedModel:       `groq/${DEFAULT_MODEL}`,
     });
   } catch (err) {
     log.error('General ask failed', err);
@@ -197,7 +197,7 @@ router.post('/chat', auth, async (req, res) => {
       reply,
       notesContextUsed,
       notesUsed:       relevantNotes.map((n) => ({ title: n.title, score: n.score })),
-      usedModel:       'groq/llama-3.3-70b',
+      usedModel:       `groq/${DEFAULT_MODEL}`,
     });
   } catch (err) {
     log.error('AI tutor chat failed', err);

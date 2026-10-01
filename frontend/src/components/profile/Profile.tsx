@@ -46,6 +46,10 @@ export default function Profile() {
 
   useEffect(() => {
     const fetchStats = async () => {
+      if (!token) {
+        setLoading(false)
+        return
+      }
       setLoading(true)
       try {
         const res = await fetchWithRetry(`${API}/api/auth/stats`, { headers: { Authorization: `Bearer ${token}` } })
@@ -55,7 +59,7 @@ export default function Profile() {
       finally { setLoading(false) }
     }
     fetchStats()
-  }, [])
+  }, [token])
 
   const saveProfile = async () => {
     if (!name.trim()||!email.trim()) { toast.error('Name and email required'); return }
@@ -199,7 +203,7 @@ export default function Profile() {
 
           {tab === 'password' && (
             <div style={{ display:'flex', flexDirection:'column', gap:16, maxWidth:440 }}>
-              {[['CURRENT_PASSWORD',currentPw,setCurrentPw],['NEW_PASSWORD',newPw,setNewPw],['CONFIRM_PASSWORD',confirmPw,setConfirmPw]].map(([label, val, setter]) => (
+              {([['CURRENT_PASSWORD',currentPw,setCurrentPw],['NEW_PASSWORD',newPw,setNewPw],['CONFIRM_PASSWORD',confirmPw,setConfirmPw]] as [string, string, React.Dispatch<React.SetStateAction<string>>][]).map(([label, val, setter]) => (
                 <div key={label as string}>
                   <div style={{ fontFamily:mono, fontSize:9, color:tk.fgDim, letterSpacing:'0.12em', marginBottom:6 }}>// {label}</div>
                   <input type="password" value={val as string} onChange={e=>(setter as any)(e.target.value)} style={inp}

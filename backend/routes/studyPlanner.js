@@ -6,7 +6,7 @@ const log = require('../utils/logger')('studyPlanner');
 const express = require('express');
 const router  = express.Router();
 const auth    = require('../middleware/auth');
-const { groqCall, extractJSON } = require('../utils/groq');
+const { groqCall, extractJSON, DEFAULT_MODEL } = require('../utils/groq');
 
 function buildPlannerPrompt({ subjects, examDate, dailyHours, weakTopics, studyStyle }) {
   const daysLeft   = Math.max(1, Math.ceil((new Date(examDate) - new Date()) / 86_400_000));
@@ -52,17 +52,41 @@ Return ONLY valid JSON, no markdown:
 }`;
 }
 
+function buildFallbackPlan({ subjects, examDate, dailyHours, weakTopics }) {
+  const days = Math.max(1, Math.min(30, Math.ceil((new Date(examDate) - new Date()) / 86_400_000)));
+  const weak = weakTopics ? weakTopics.split(',').map((topic) => topic.trim()).filter(Boolean) : [];
+  const dailyPlan = Array.from({ length: days }, (_, index) => {
+    const date = new Date();
+    date.setDate(date.getDate() + index + 1);
+    const isRestDay = (index + 1) % 7 === 0;
+    const subject = subjects[index % subjects.length];
+    return {
+      day: index + 1,
+      date: date.toISOString().slice(0, 10),
+      restDay: isRestDay,
+      totalHours: isRestDay ? 0 : dailyHours,
+      sessions: isRestDay ? [{ subject: 'Rest', topic: '', duration: 0, type: 'rest', description: 'Take a full rest day.' }] : [
+        { subject, topic: weak[index % weak.length] || 'Core concepts', duration: Math.min(90, Math.max(45, Math.round((dailyHours * 60) / 2))), type: 'study', description: 'Review concepts and create concise revision notes.' },
+        { subject, topic: 'Practice and recall', duration: Math.min(90, Math.max(45, Math.round((dailyHours * 60) / 2))), type: 'practice', description: 'Test recall with practice questions and review mistakes.' },
+      ],
+    };
+  });
+  return {
+    summary: { totalDays: days, totalHours: dailyPlan.reduce((sum, day) => sum + day.totalHours, 0), subjects, strategy: 'Rotate subjects, prioritise weak topics, and reserve regular days for recall and practice.' },
+    dailyPlan,
+  };
+}
+
 // POST /api/planner/generate
 router.post('/generate', auth, async (req, res) => {
+  const {
+    subjects,
+    examDate,
+    dailyHours = 4,
+    weakTopics = '',
+    studyStyle = 'mixed',
+  } = req.body;
   try {
-    const {
-      subjects,
-      examDate,
-      dailyHours = 4,
-      weakTopics = '',
-      studyStyle = 'mixed',
-    } = req.body;
-
     if (!subjects?.length) return res.status(400).json({ error: 'Subjects are required' });
     if (!examDate)          return res.status(400).json({ error: 'Exam date is required' });
     if (new Date(examDate) <= new Date()) return res.status(400).json({ error: 'Exam date must be in the future' });
@@ -77,13 +101,14 @@ router.post('/generate', auth, async (req, res) => {
     log.ok('Study plan generated', { subjects, days: plan.dailyPlan.length, dailyHours });
     res.json({
       success:   true,
-      usedModel: 'groq/llama-3.3-70b',
+      usedModel: `groq/${DEFAULT_MODEL}`,
       summary:   plan.summary,
       dailyPlan: plan.dailyPlan,
     });
   } catch (err) {
     log.error('Study plan generation failed', err);
-    res.status(500).json({ error: err.message });
+    const fallback = buildFallbackPlan({ subjects, examDate, dailyHours, weakTopics });
+    res.json({ success: true, ...fallback, fallback: true });
   }
 });
 
