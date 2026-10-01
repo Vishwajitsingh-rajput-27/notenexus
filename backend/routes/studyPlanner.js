@@ -94,15 +94,16 @@ router.post('/generate', auth, async (req, res) => {
     const raw  = await groqCall(buildPlannerPrompt({ subjects, examDate, dailyHours, weakTopics, studyStyle }), { maxTokens: 4_000 });
     const plan = extractJSON(raw, 'object');
 
-    if (!plan?.dailyPlan) {
-      return res.status(500).json({ error: 'Could not generate plan. Please try again.' });
+    if (!Array.isArray(plan?.dailyPlan) || plan.dailyPlan.length === 0) {
+      const fallback = buildFallbackPlan({ subjects, examDate, dailyHours, weakTopics });
+      return res.json({ success: true, ...fallback, fallback: true });
     }
 
     log.ok('Study plan generated', { subjects, days: plan.dailyPlan.length, dailyHours });
     res.json({
       success:   true,
       usedModel: `groq/${DEFAULT_MODEL}`,
-      summary:   plan.summary,
+      summary:   plan.summary || buildFallbackPlan({ subjects, examDate, dailyHours, weakTopics }).summary,
       dailyPlan: plan.dailyPlan,
     });
   } catch (err) {

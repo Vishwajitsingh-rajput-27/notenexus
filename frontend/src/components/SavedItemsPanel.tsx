@@ -29,6 +29,22 @@ function fmtDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
+function hasRenderableSavedData(type: SavedItemType, data: any) {
+  if (!data) return false
+  if (type === 'flashcards') {
+    return Array.isArray(data.cards) && data.cards.some((card: any) =>
+      card?.question && card.question.toLowerCase() !== 'error' &&
+      card?.answer && !/^please try again/i.test(card.answer)
+    )
+  }
+  if (type === 'mindmap') return Boolean(data.root && Array.isArray(data.children))
+  if (type === 'studyplan') return Array.isArray((data.plan ?? data).dailyPlan)
+  if (type === 'examquestions') return Array.isArray(data.questions) && data.questions.length > 0
+  if (type === 'quiz') return Array.isArray(data.questions) && data.questions.length > 0
+  if (type === 'chat') return Array.isArray(data.history) && data.history.length > 0
+  return true
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Inline previews for each saved item type
 // ─────────────────────────────────────────────────────────────────────────────
@@ -352,7 +368,7 @@ export function SavedItemsPanel({ type, onLoad, label: customLabel }: SavedItems
     setLoading(true)
     try {
       const d = await apiGetSavedItems(type)
-      setItems(d.items)
+      setItems((d.items || []).filter((item: any) => hasRenderableSavedData(type, item.data)))
     } catch { toast.error('Could not load saved items') }
     finally { setLoading(false) }
   }, [type])

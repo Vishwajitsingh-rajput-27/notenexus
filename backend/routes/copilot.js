@@ -10,6 +10,14 @@ const { checkPlan } = require('../middleware/checkPlan');
 const { semanticSearch } = require('../services/vectorService');
 const log = require('../utils/logger')('copilot');
 
+const fallbackDailyQuestion = (target) => ({
+  question: `What is one important idea to review about ${target.topic}?`,
+  type: 'short_answer',
+  options: [],
+  answer: `Review the definition, key relationships, and one worked example for ${target.topic}.`,
+  explanation: `Use your ${target.subject} notes to explain ${target.topic} in your own words, then check the details against a worked example.`,
+});
+
 // ── POST /api/copilot/chat — General AI chat with notes context ───────────
 // FIX: This endpoint was missing — frontend StudyCopilot calls it
 router.post('/chat', auth, async (req, res) => {
@@ -161,10 +169,14 @@ Return ONLY JSON: {"question":"...","type":"MCQ","options":["A)...","B)...","C).
       { maxTokens: 400 }
     );
 
-    const question = extractJSON(raw, 'object');
-    res.json({ success: true, question, topic: target.topic, subject: target.subject });
+    const parsed = extractJSON(raw, 'object');
+    const question = parsed?.question?.trim() ? parsed : fallbackDailyQuestion(target);
+    res.json({ success: true, question, topic: target.topic, subject: target.subject, fallback: question === parsed ? false : true });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    log.warn('Daily question generation failed; returning fallback', err.message);
+    const profile = await UserProfile.findOne({ userId: req.user._id });
+    const target = profile?.weakTopics?.[0] || { topic: 'your latest topic', subject: 'your subject' };
+    res.json({ success: true, question: fallbackDailyQuestion(target), topic: target.topic, subject: target.subject, fallback: true });
   }
 });
 
