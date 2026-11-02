@@ -677,3 +677,4 @@ l
 [![Try NoteNexus](https://img.shields.io/badge/🚀_Try_NoteNexus_Now-000000?style=for-the-badge)](https://notenexus-azure.vercel.app)
 
 </div>
+
